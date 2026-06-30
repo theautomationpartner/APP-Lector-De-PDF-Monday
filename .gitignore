@@ -1,0 +1,28 @@
+# Dependencias
+node_modules/
+
+# Secretos / credenciales (NUNCA subir)
+.env
+*.pem
+*.crt
+certs/
+
+# Datos privados (facturas reales de prueba — NO subir)
+test-facturas/
+
+# Build / artefactos
+dist/
+public/
+*.zip
+*.tar.gz
+
+# Binarios
+*.exe
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db

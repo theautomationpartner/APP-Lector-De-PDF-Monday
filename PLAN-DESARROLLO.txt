@@ -1,0 +1,127 @@
+================================================================================
+  LECTOR PDF IA  —  PLAN DE DESARROLLO
+  App de Monday (marketplace) que lee facturas PDF con IA y carga columnas.
+  Producto UNIVERSAL: cualquier país, inglés por defecto + español.
+  App ID Monday: 11460961   |   Actualizado: 2026-06-30
+================================================================================
+
+OBJETIVO GENERAL
+  Migrar la app de "Monday Code + Monday Storage" a infra propia:
+  Droplet DigitalOcean (167.172.137.150) + PostgreSQL Managed de DO.
+  Internacionalizar el catálogo (18 campos), idioma EN/ES, y guardar
+  config + histórico en Postgres.
+
+
+--------------------------------------------------------------------------------
+  YA HECHO (✅)
+--------------------------------------------------------------------------------
+  [x] Investigación de viabilidad: VIABLE (núcleo universal EN 16931 +
+      capa fiscal por país + revisión humana). Catálogo de 18 campos validado.
+  [x] Base de datos PostgreSQL: esquema aplicado (tablas: installations,
+      board_configs, extractions). SQL en backend/db/schema.sql.
+  [x] Frontend (vista de config) reconstruido y compilando:
+      - Catálogo internacional de 18 campos.
+      - Inglés por defecto + switch a español (UI + textos de la app).
+      - País + Moneda OBLIGATORIOS. Columna de estado: la auto-detecta el backend.
+      - Hoy guarda en Monday Storage / localStorage (a migrar a Postgres).
+
+
+--------------------------------------------------------------------------------
+  FASE A — BACKEND (local)   ← ✅ COMPLETADA Y PROBADA (2026-06-30)
+--------------------------------------------------------------------------------
+  Reescribir el backend para Postgres + internacional + servir la vista.
+
+  [x] A1. Capa de base de datos
+         - Agregar dependencia "pg" al backend.
+         - db.mjs: pool de conexión + SSL (CA cert de DO, verify-full).
+         - runStartupMigrations(): corre schema.sql al arrancar (idempotente).
+
+  [x] A2. Catálogo internacional en el backend
+         - fields.mjs: pasar de los 21 campos AR a los 18 internacionales
+           (igual que el frontend).
+
+  [x] A3. Prompt universal de extracción (extractor.mjs)
+         - Extraer por SIGNIFICADO con sinónimos por país (tax id = VAT/CUIT/
+           RFC/NIF/EIN/GSTIN...).
+         - "La factura puede estar en cualquier idioma".
+         - Devolver normalizado: fecha YYYY-MM-DD, número con punto decimal,
+           moneda ISO. + detected_country.
+
+  [x] A4. Endpoints de configuración (mapeo -> Postgres)
+         - GET  /api/config/:boardId  -> lee board_configs.
+         - POST /api/config/:boardId  -> guarda mapping + país + moneda + idioma.
+         - Auth: verificar el session token de Monday (MONDAY_CLIENT_SECRET)
+           para sacar el account_id.
+         - Frontend: cambiar saveConfig/loadConfig para pegarle a estos endpoints.
+
+  [x] A5. Endpoint de lectura (server.mjs /monday/extract)
+         - Leer mapping desde Postgres (board_configs) en vez de Monday Storage.
+         - Usar país/moneda de la config para normalizar.
+         - Loguear cada lectura en la tabla "extractions" (tokens, modelo,
+           país, éxito/error).
+         - Comentarios y estados que escribe la app, en el idioma de la
+           instalación (EN/ES).
+
+  [x] A6. Servir el frontend desde el backend
+         - express.static del dist/ (hoy server.mjs no lo hace).
+
+  [x] A7. Probar todo localmente (con la DB ya creada).
+
+
+--------------------------------------------------------------------------------
+  FASE B — SERVIDOR / DEPLOY (droplet)   ← BLOQUEADO: necesito 2 cosas tuyas
+--------------------------------------------------------------------------------
+  >>> NECESITO DE VOS:
+      (a) Acceso SSH al droplet (una key, o me das los comandos y los corrés vos).
+      (b) Un subdominio para la app (ej: app.tudominio.com) + si usás Cloudflare.
+
+  ✅ ARTEFACTOS DE DEPLOY YA LISTOS (2026-06-30) — ver carpeta deploy/ :
+     - deploy/setup.sh ............ provisiona el droplet (Node 20, nginx, PM2, certbot)
+     - deploy/nginx.conf.example .. reverse proxy + lugar para HTTPS
+     - deploy/DEPLOY.md ........... guía paso a paso completa (paso 1 a 8)
+     - backend/ecosystem.config.js  PM2 afinado para 512 MB
+     Cuando llegue el acceso, el deploy es seguir DEPLOY.md.
+
+  [ ] B1. Provisionar droplet: Node 20, PM2, nginx, git.
+  [ ] B2. .env en el droplet: ANTHROPIC_API_KEY, MONDAY_SIGNING_SECRET,
+          MONDAY_CLIENT_SECRET, DATABASE_URL, PORT.
+  [ ] B3. Conexión a la DB: CA cert (verify-full) + host PRIVADO (VPC).
+  [ ] B4. nginx (reverse proxy) + HTTPS (Cloudflare/Let's Encrypt) en el subdominio.
+  [ ] B5. PM2: arrancar la app + pm2 save + startup (sobrevive reinicios).
+  [ ] B6. 🔴 SEGURIDAD: rotar la contraseña de la DB + Trusted Sources = solo el droplet.
+
+
+--------------------------------------------------------------------------------
+  FASE C — MONDAY DEVELOPER CENTER (re-apuntar la app que YA existe)
+--------------------------------------------------------------------------------
+  No se crea nada nuevo: se re-apunta la app 11460961 al droplet.
+
+  [ ] C1. Board View (vista de config) -> URL del droplet (en vez de Monday CDN).
+  [ ] C2. Acción / receta -> URL del droplet (/monday/extract).
+  [ ] C3. Cargar MONDAY_SIGNING_SECRET y MONDAY_CLIENT_SECRET.
+  [ ] C4. Probar en versión Draft -> promover a Live.
+  [ ] C5. Recrear la receta en el board de prueba (toma la versión nueva).
+
+
+--------------------------------------------------------------------------------
+  FASE D — VALIDACIÓN Y PULIDO
+--------------------------------------------------------------------------------
+  [ ] D1. Test empírico: 4-5 facturas reales de distintos países por Claude,
+          medir precisión (incluir un escaneo y algo no-latino).
+  [ ] D2. Definir umbral de confianza + revisión humana.
+  [ ] D3. Pulido visual final / textos del marketplace (EN).
+
+
+--------------------------------------------------------------------------------
+  V2 (más adelante, NO ahora)
+--------------------------------------------------------------------------------
+  [ ] Line items / renglones de la factura -> como subítems de Monday.
+  [ ] Capa fiscal por país (CAE, CFDI/folio, IRN, NF-e, etc.) opcional.
+  [ ] Panel de admin sobre la tabla "extractions" (analytics / cobrar por uso).
+
+
+================================================================================
+  PRÓXIMO PASO: Fase B (deploy en el droplet).
+  BLOQUEADO hasta que me pases: (a) acceso SSH al droplet + (b) un subdominio.
+  La Fase A quedó completa y probada (DB, endpoints, prompt universal, servir vista).
+================================================================================

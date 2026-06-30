@@ -1,0 +1,136 @@
+// i18n mínimo — inglés por defecto, español opcional. Sin dependencias externas.
+export const LANGUAGES = [
+  { code: 'en', label: 'EN' },
+  { code: 'es', label: 'ES' },
+]
+
+const en = {
+  'app.title': 'AI Invoice Reader',
+  'app.subtitleMap': 'Field mapping',
+  'app.subtitleBoard': 'Board: {name}',
+  'preview.banner':
+    '👁️ Design preview (sample columns) — open it inside a monday board to see your real columns.',
+  'state.connecting': 'Connecting to monday…',
+  'state.noBoard': 'No board detected. Open this view from a board tab.',
+  'state.loadingColumns': 'Loading board columns…',
+  'frame.eyebrow': 'Field mapping',
+  'frame.title':
+    'Match each invoice field to a column in your board. Anything you don’t map is still read, just not loaded.',
+  'legend.mapped': 'Mapped',
+  'legend.unmapped': 'Not mapped',
+  'invoice.title': 'INVOICE',
+  'group.supplier': 'Supplier',
+  'group.customer': 'Customer / Bill to',
+  'lineItems.note': 'Line items (subitems) arrive in v2.',
+  'lineItems.concept': 'Description',
+  'lineItems.qty': 'Qty',
+  'lineItems.unit': 'Unit price',
+  'lineItems.tax': 'Tax %',
+  'lineItems.amount': 'Amount',
+  'settings.title': 'Settings',
+  'settings.statusColumn': 'Trigger status column',
+  'settings.statusColumnHelp':
+    'When this column changes to the trigger label, the AI reads the PDF.',
+  'settings.country': 'Default country',
+  'settings.currency': 'Default currency',
+  'settings.select': '— Select —',
+  'settings.auto': 'Auto-detect',
+  'settings.help': 'Defaults are only used when the invoice doesn’t reveal them.',
+  'placeholder.column': 'column',
+  'placeholder.type': 'type / letter',
+  'save.counter': '{n} of {total} fields mapped',
+  'save.saving': '💾 Saving…',
+  'save.saved': '✓ Saved',
+  'save.error': '⚠️ Save error',
+  'save.dirty': '● Unsaved changes',
+  'save.button': 'Save configuration',
+  'field.document_type': 'Document type',
+  'field.invoice_number': 'Invoice number',
+  'field.issue_date': 'Issue date',
+  'field.due_date': 'Due date',
+  'field.po_number': 'PO number',
+  'field.currency': 'Currency',
+  'field.supplier_name': 'Supplier name',
+  'field.supplier_tax_id': 'Supplier tax ID',
+  'field.supplier_address': 'Supplier address',
+  'field.customer_name': 'Customer name',
+  'field.customer_tax_id': 'Customer tax ID',
+  'field.customer_address': 'Customer address',
+  'field.subtotal': 'Subtotal',
+  'field.tax_amount': 'Tax',
+  'field.total_amount': 'Total',
+  'field.amount_due': 'Amount due',
+  'field.payment_terms': 'Payment terms',
+  'field.notes': 'Notes',
+}
+
+const es = {
+  'app.title': 'Lector de Facturas IA',
+  'app.subtitleMap': 'Mapeo de campos',
+  'app.subtitleBoard': 'Tablero: {name}',
+  'preview.banner':
+    '👁️ Vista previa de diseño (columnas de ejemplo) — abrila dentro de un tablero de monday para ver tus columnas reales.',
+  'state.connecting': 'Conectando con monday…',
+  'state.noBoard': 'No detecto un tablero. Abrí esta vista desde la pestaña de un tablero.',
+  'state.loadingColumns': 'Cargando columnas del tablero…',
+  'frame.eyebrow': 'Mapeo de campos',
+  'frame.title':
+    'Asociá cada campo de la factura con una columna de tu tablero. Lo que no mapees igual se lee, pero no se carga.',
+  'legend.mapped': 'Mapeado',
+  'legend.unmapped': 'Sin mapear',
+  'invoice.title': 'FACTURA',
+  'group.supplier': 'Emisor',
+  'group.customer': 'Cliente / Receptor',
+  'lineItems.note': 'Los renglones (subítems) llegan en la v2.',
+  'lineItems.concept': 'Concepto',
+  'lineItems.qty': 'Cant',
+  'lineItems.unit': 'Precio unit.',
+  'lineItems.tax': 'IVA %',
+  'lineItems.amount': 'Importe',
+  'settings.title': 'Ajustes',
+  'settings.statusColumn': 'Columna de estado que dispara',
+  'settings.statusColumnHelp':
+    'Cuando esta columna cambia a la etiqueta de disparo, la IA lee el PDF.',
+  'settings.country': 'País por defecto',
+  'settings.currency': 'Moneda por defecto',
+  'settings.select': '— Elegí —',
+  'settings.auto': 'Detección automática',
+  'settings.help': 'Los valores por defecto solo se usan cuando la factura no los revela.',
+  'placeholder.column': 'columna',
+  'placeholder.type': 'tipo / letra',
+  'save.counter': '{n} de {total} campos mapeados',
+  'save.saving': '💾 Guardando…',
+  'save.saved': '✓ Guardado',
+  'save.error': '⚠️ Error al guardar',
+  'save.dirty': '● Cambios sin guardar',
+  'save.button': 'Guardar configuración',
+  'field.document_type': 'Tipo de documento',
+  'field.invoice_number': 'Número de comprobante',
+  'field.issue_date': 'Fecha de emisión',
+  'field.due_date': 'Fecha de vencimiento',
+  'field.po_number': 'Orden de compra',
+  'field.currency': 'Moneda',
+  'field.supplier_name': 'Razón social del emisor',
+  'field.supplier_tax_id': 'ID fiscal del emisor',
+  'field.supplier_address': 'Domicilio del emisor',
+  'field.customer_name': 'Razón social del cliente',
+  'field.customer_tax_id': 'ID fiscal del cliente',
+  'field.customer_address': 'Domicilio del cliente',
+  'field.subtotal': 'Subtotal',
+  'field.tax_amount': 'Impuestos',
+  'field.total_amount': 'Total',
+  'field.amount_due': 'Saldo a pagar',
+  'field.payment_terms': 'Condición de pago',
+  'field.notes': 'Observaciones',
+}
+
+export const dictionaries = { en, es }
+
+export function makeT(lang) {
+  const dict = dictionaries[lang] || en
+  return (key, vars) => {
+    let s = dict[key] ?? en[key] ?? key
+    if (vars) for (const k of Object.keys(vars)) s = s.replaceAll(`{${k}}`, vars[k])
+    return s
+  }
+}

@@ -1,0 +1,30 @@
+# nginx para Lector PDF IA — reverse proxy al backend Node (localhost:8080).
+# Copiar a:  /etc/nginx/sites-available/lector-pdf-ia
+# Luego:     ln -s /etc/nginx/sites-available/lector-pdf-ia /etc/nginx/sites-enabled/
+#            nginx -t && systemctl reload nginx
+#            certbot --nginx -d TU_SUBDOMINIO    (agrega el bloque 443 con HTTPS)
+#
+# TLS: lo agrega certbot (Let's Encrypt, gratis) o lo termina Cloudflare
+#      (si usás Cloudflare en "orange cloud", el HTTPS lo da Cloudflare).
+
+server {
+    listen 80;
+    listen [::]:80;
+
+    # Reemplazar por tu subdominio (ej: lector.theautomationpartner.com)
+    # o el nombre gratis tipo 167-172-137-150.nip.io
+    server_name TU_SUBDOMINIO;
+
+    # Los PDFs pueden pesar; subimos el límite.
+    client_max_body_size 10M;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;   # la lectura del PDF con IA puede tardar
+    }
+}

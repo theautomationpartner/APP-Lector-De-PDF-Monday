@@ -1,0 +1,19 @@
+{
+  "name": "lector-pdf-ia-backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "extract": "node extract.mjs",
+    "copy-frontend": "node -e \"const fs=require('fs'),path=require('path');const src=path.join(process.cwd(),'..','frontend','dist'),dst=path.join(process.cwd(),'public');if(fs.existsSync(dst))fs.rmSync(dst,{recursive:true,force:true});if(fs.existsSync(src)){fs.cpSync(src,dst,{recursive:true});console.log('Frontend copiado a public/')}else{console.log('No hay dist/, corré npm run build en frontend primero')}\""
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0",
+    "@mondaycom/apps-sdk": "^3.3.2",
+    "dotenv": "^17.3.1",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.3"
+  }
+}
