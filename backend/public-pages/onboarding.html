@@ -1,0 +1,240 @@
+<!doctype html>
+<!--
+  ════════════════════════════════════════════════════════════════════════════
+  "HOW TO USE" / "CÓMO USAR" — AI Invoice Reader (monday.com app)
+  Página pública embebible en iframe de *.monday.com. Va al campo "How to use
+  Link" del form de submission. Bilingüe EN/ES, arranca en inglés, localStorage
+  'air_lang'.
+
+  ⚠️  REEMPLAZÁ LOS PLACEHOLDERS DE SCREENSHOT (.shot) POR CAPTURAS REALES ANTES
+      DEL SUBMIT — una por idioma idealmente. Dejé el texto de cada paso listo.
+  ════════════════════════════════════════════════════════════════════════════
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>How to use — AI Invoice Reader</title>
+    <style>
+        :root {
+            --navy: #071F32; --navy-500: #163F5E; --yellow: #F0CA29;
+            --bg: #F3F6FA; --text: #1a202c; --text-light: #4a5568; --border: #e2e8f0;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: var(--text); background: var(--bg); line-height: 1.6; -webkit-font-smoothing: antialiased;
+        }
+        a { color: var(--navy-500); } a:hover { color: var(--navy); }
+        .page { max-width: 860px; margin: 0 auto; padding: 24px 20px 80px; }
+        .lang-switch { display: flex; gap: 4px; justify-content: flex-end; margin-bottom: 16px; }
+        .lang-switch button {
+            font-family: inherit; font-size: 13px; font-weight: 700; letter-spacing: .03em;
+            border: 1px solid var(--border); background: #fff; color: var(--text-light);
+            padding: 6px 14px; border-radius: 999px; cursor: pointer; transition: .15s;
+        }
+        .lang-switch button:hover { color: var(--navy); }
+        .lang-switch button.active { background: var(--navy); color: #fff; border-color: var(--navy); }
+        .lang-block { display: none; } .lang-block.active { display: block; }
+        .hero {
+            background: linear-gradient(135deg, var(--navy) 0%, var(--navy-500) 100%);
+            color: #fff; padding: 40px; border-radius: 12px; margin-bottom: 28px;
+        }
+        .hero-kicker {
+            display: inline-block; font-size: 12px; font-weight: 600;
+            letter-spacing: 0.08em; text-transform: uppercase; color: var(--yellow); margin-bottom: 12px;
+        }
+        .hero h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px; }
+        .hero p { font-size: 15px; color: rgba(255,255,255,.85); max-width: 600px; }
+        .step {
+            background: #fff; border-radius: 12px; padding: 26px 30px; margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 4px 12px rgba(7,31,50,.04);
+        }
+        .step-head { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+        .step-num {
+            flex: 0 0 auto; width: 38px; height: 38px; border-radius: 10px;
+            background: var(--navy); color: var(--yellow); font-weight: 800; font-size: 18px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .step-head h2 { font-size: 19px; font-weight: 700; color: var(--navy); letter-spacing: -0.01em; }
+        .step p { color: var(--text-light); margin-bottom: 10px; }
+        .step ul { margin: 6px 0 10px; padding-left: 22px; color: var(--text-light); }
+        .step li { margin-bottom: 6px; }
+        .shot {
+            margin: 14px 0 4px; border: 2px dashed var(--border); border-radius: 10px;
+            background: var(--bg); min-height: 150px; display: flex; align-items: center;
+            justify-content: center; text-align: center; color: #9aa5b1; font-size: 13px; padding: 20px;
+        }
+        .shot img { max-width: 100%; border-radius: 8px; display: block; }
+        .tips { background: #fff; border-radius: 12px; padding: 26px 30px; margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 4px 12px rgba(7,31,50,.04); }
+        .tips h2 { font-size: 18px; font-weight: 700; color: var(--navy); margin-bottom: 12px; }
+        .tips ul { padding-left: 22px; color: var(--text-light); } .tips li { margin-bottom: 8px; }
+        .footer-note { text-align: center; color: var(--text-light); font-size: 14px; margin-top: 28px; padding: 20px; }
+        .footer-note a { font-weight: 600; }
+        @media (max-width: 640px) {
+            .hero { padding: 28px 22px; } .hero h1 { font-size: 24px; } .step, .tips { padding: 22px 20px; }
+        }
+    </style>
+</head>
+<body>
+    <main class="page">
+        <div class="lang-switch" role="group" aria-label="Language / Idioma">
+            <button type="button" data-lang="en">EN</button>
+            <button type="button" data-lang="es">ES</button>
+        </div>
+
+        <!-- ══════════════════ ENGLISH ══════════════════ -->
+        <div class="lang-block" data-lang="en">
+            <header class="hero">
+                <div class="hero-kicker">AI Invoice Reader · Getting started</div>
+                <h1>How to use AI Invoice Reader</h1>
+                <p>Configure it once. After that, every invoice PDF or image dropped on your board is
+                read by AI and its data loaded into your columns — automatically.</p>
+            </header>
+
+            <div class="step">
+                <div class="step-head"><div class="step-num">1</div><h2>Add the view to your board</h2></div>
+                <p>Open your board, click the <strong>+</strong> next to your board tabs, and add the
+                <strong>AI Invoice Reader</strong> view. This is where you configure everything.</p>
+                <div class="shot">[ Screenshot: adding the AI Invoice Reader view to a board ]</div>
+            </div>
+
+            <div class="step">
+                <div class="step-head"><div class="step-num">2</div><h2>Map the invoice fields to your columns</h2></div>
+                <p>In the view, match each invoice field (invoice number, dates, amounts, supplier,
+                customer…) to a column in your board. Anything you leave unmapped is still read, just
+                not written.</p>
+                <ul>
+                    <li>Pick the <strong>File column</strong> where the invoice PDF/image will be uploaded.</li>
+                    <li>Optionally set the countries and currencies your board handles (just hints — the AI detects each invoice anyway).</li>
+                    <li>Click <strong>Save</strong>.</li>
+                </ul>
+                <div class="shot">[ Screenshot: the field-mapping screen with columns matched ]</div>
+            </div>
+
+            <div class="step">
+                <div class="step-head"><div class="step-num">3</div><h2>Add the automation</h2></div>
+                <p>Go to <strong>Automate</strong> on your board and add the recipe:
+                <em>"When a status changes to a chosen label, read the invoice with AI."</em> This is
+                what triggers a reading.</p>
+                <div class="shot">[ Screenshot: the automation recipe configured ]</div>
+            </div>
+
+            <div class="step">
+                <div class="step-head"><div class="step-num">4</div><h2>Upload an invoice and trigger it</h2></div>
+                <p>On any item, upload the invoice file to your File column and change the status to
+                the trigger label. Within seconds the App reads the file, fills your mapped columns,
+                leaves a comment listing what it loaded, and sets the status to <strong>Invoice
+                read</strong>.</p>
+                <div class="shot">[ Screenshot: an item with columns filled + the App's comment ]</div>
+            </div>
+
+            <div class="tips">
+                <h2>Good to know</h2>
+                <ul>
+                    <li><strong>PDF or photo:</strong> both work — a clean PDF gives the best results.</li>
+                    <li><strong>Any country, any language:</strong> the AI detects the invoice's country, currency, date and number format on its own.</li>
+                    <li><strong>Avoid duplicates:</strong> turn on the rule in the view to flag a repeated invoice (same supplier + number) instead of loading it twice.</li>
+                    <li><strong>Always verify:</strong> AI reading is highly accurate but not perfect — check the values before using them for accounting or payments.</li>
+                </ul>
+            </div>
+
+            <div class="footer-note">
+                Need help? <a href="mailto:invoice-reader@theautomationpartner.com">invoice-reader@theautomationpartner.com</a>
+                · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
+            </div>
+        </div>
+
+        <!-- ══════════════════ ESPAÑOL ══════════════════ -->
+        <div class="lang-block" data-lang="es">
+            <header class="hero">
+                <div class="hero-kicker">AI Invoice Reader · Primeros pasos</div>
+                <h1>Cómo usar AI Invoice Reader</h1>
+                <p>Configuralo una vez. Después, cada factura en PDF o imagen que subas al tablero la
+                lee la IA y carga sus datos en tus columnas — automáticamente.</p>
+            </header>
+
+            <div class="step">
+                <div class="step-head"><div class="step-num">1</div><h2>Agregá la vista a tu tablero</h2></div>
+                <p>Abrí tu tablero, hacé clic en el <strong>+</strong> al lado de las pestañas y agregá
+                la vista <strong>AI Invoice Reader</strong>. Ahí configurás todo.</p>
+                <div class="shot">[ Captura: agregando la vista AI Invoice Reader a un tablero ]</div>
+            </div>
+
+            <div class="step">
+                <div class="step-head"><div class="step-num">2</div><h2>Mapeá los campos de la factura a tus columnas</h2></div>
+                <p>En la vista, asociá cada campo de la factura (número, fechas, importes, emisor,
+                cliente…) con una columna de tu tablero. Lo que dejes sin mapear igual se lee, solo que
+                no se escribe.</p>
+                <ul>
+                    <li>Elegí la <strong>columna de Archivo</strong> donde vas a subir el PDF/imagen.</li>
+                    <li>Opcional: indicá los países y monedas que maneja tu tablero (son solo pistas — la IA detecta cada factura igual).</li>
+                    <li>Hacé clic en <strong>Guardar</strong>.</li>
+                </ul>
+                <div class="shot">[ Captura: la pantalla de mapeo con las columnas asociadas ]</div>
+            </div>
+
+            <div class="step">
+                <div class="step-head"><div class="step-num">3</div><h2>Agregá la automatización</h2></div>
+                <p>Entrá a <strong>Automatizar</strong> en tu tablero y agregá la receta:
+                <em>"Cuando un estado cambie a la etiqueta elegida, leer la factura con IA."</em> Eso
+                es lo que dispara una lectura.</p>
+                <div class="shot">[ Captura: la receta de automatización configurada ]</div>
+            </div>
+
+            <div class="step">
+                <div class="step-head"><div class="step-num">4</div><h2>Subí una factura y disparala</h2></div>
+                <p>En cualquier ítem, subí el archivo de la factura a tu columna de Archivo y cambiá el
+                estado a la etiqueta disparadora. En segundos la App lee el archivo, completa tus
+                columnas mapeadas, deja un comentario con lo que cargó y pone el estado en
+                <strong>Comprobante leído</strong>.</p>
+                <div class="shot">[ Captura: un ítem con las columnas completadas + el comentario de la App ]</div>
+            </div>
+
+            <div class="tips">
+                <h2>Bueno saber</h2>
+                <ul>
+                    <li><strong>PDF o foto:</strong> los dos andan — un PDF limpio da el mejor resultado.</li>
+                    <li><strong>Cualquier país, cualquier idioma:</strong> la IA detecta sola el país, la moneda y el formato de fecha y número de la factura.</li>
+                    <li><strong>Evitar duplicados:</strong> activá la regla en la vista para marcar una factura repetida (mismo emisor + número) en lugar de cargarla dos veces.</li>
+                    <li><strong>Verificá siempre:</strong> la lectura con IA es muy precisa pero no perfecta — revisá los valores antes de usarlos para contabilidad o pagos.</li>
+                </ul>
+            </div>
+
+            <div class="footer-note">
+                ¿Ayuda? <a href="mailto:invoice-reader@theautomationpartner.com">invoice-reader@theautomationpartner.com</a>
+                · <a href="/privacy">Privacidad</a> · <a href="/terms">Términos</a>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        (function () {
+            var KEY = "air_lang";
+            var DEFAULT = "en";
+            function read() {
+                try { var s = localStorage.getItem(KEY); if (s === "es" || s === "en") return s; } catch (e) {}
+                return DEFAULT;
+            }
+            function apply(lang) {
+                document.documentElement.lang = lang;
+                var blocks = document.querySelectorAll(".lang-block");
+                for (var i = 0; i < blocks.length; i++) {
+                    blocks[i].classList.toggle("active", blocks[i].getAttribute("data-lang") === lang);
+                }
+                var btns = document.querySelectorAll(".lang-switch button");
+                for (var j = 0; j < btns.length; j++) {
+                    btns[j].classList.toggle("active", btns[j].getAttribute("data-lang") === lang);
+                }
+                try { localStorage.setItem(KEY, lang); } catch (e) {}
+            }
+            var buttons = document.querySelectorAll(".lang-switch button");
+            for (var k = 0; k < buttons.length; k++) {
+                buttons[k].addEventListener("click", function () { apply(this.getAttribute("data-lang")); });
+            }
+            apply(read());
+        })();
+    </script>
+</body>
+</html>

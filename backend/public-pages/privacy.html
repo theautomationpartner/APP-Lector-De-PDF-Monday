@@ -1,0 +1,398 @@
+<!doctype html>
+<!--
+  ════════════════════════════════════════════════════════════════════════════
+  PRIVACY POLICY / POLÍTICA DE PRIVACIDAD — AI Invoice Reader (monday.com app)
+
+  Bilingüe EN/ES con selector. Arranca en INGLÉS (requisito de monday). Recuerda
+  la elección en localStorage ('air_lang', compartida con terms.html/onboarding.html).
+
+  ⚠️  CONFIRMÁ / REEMPLAZÁ ESTOS PLACEHOLDERS ANTES DE MANDAR A REVIEW:
+      • RAZÓN SOCIAL  → "M&amp;P CONSULTING SERVICES LLC." (igual en privacy, terms y listing)
+      • EMAIL SOPORTE → "invoice-reader@theautomationpartner.com"
+      • FECHA DE ACTUALIZACIÓN.
+  ════════════════════════════════════════════════════════════════════════════
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Privacy Policy — AI Invoice Reader</title>
+    <style>
+        :root {
+            --navy: #071F32; --navy-500: #163F5E; --yellow: #F0CA29;
+            --bg: #F3F6FA; --text: #1a202c; --text-light: #4a5568; --border: #e2e8f0;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: var(--text); background: var(--bg); line-height: 1.6; -webkit-font-smoothing: antialiased;
+        }
+        a { color: var(--navy-500); } a:hover { color: var(--navy); }
+        .page { max-width: 820px; margin: 0 auto; padding: 24px 20px 80px; }
+        .lang-switch { display: flex; gap: 4px; justify-content: flex-end; margin-bottom: 16px; }
+        .lang-switch button {
+            font-family: inherit; font-size: 13px; font-weight: 700; letter-spacing: .03em;
+            border: 1px solid var(--border); background: #fff; color: var(--text-light);
+            padding: 6px 14px; border-radius: 999px; cursor: pointer; transition: .15s;
+        }
+        .lang-switch button:hover { color: var(--navy); }
+        .lang-switch button.active { background: var(--navy); color: #fff; border-color: var(--navy); }
+        .lang-block { display: none; } .lang-block.active { display: block; }
+        .hero {
+            background: linear-gradient(135deg, var(--navy) 0%, var(--navy-500) 100%);
+            color: #fff; padding: 40px; border-radius: 12px; margin-bottom: 28px;
+        }
+        .hero-kicker {
+            display: inline-block; font-size: 12px; font-weight: 600;
+            letter-spacing: 0.08em; text-transform: uppercase; color: var(--yellow); margin-bottom: 12px;
+        }
+        .hero h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px; }
+        .hero .updated { font-size: 14px; color: rgba(255,255,255,.8); }
+        .section {
+            background: #fff; border-radius: 12px; padding: 28px 32px; margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 4px 12px rgba(7,31,50,.04);
+        }
+        .section h2 { font-size: 20px; font-weight: 700; color: var(--navy); margin-bottom: 14px; letter-spacing: -0.01em; }
+        .section h3 { font-size: 16px; font-weight: 600; color: var(--navy); margin: 18px 0 8px; }
+        .section p { color: var(--text-light); margin-bottom: 12px; } .section p:last-child { margin-bottom: 0; }
+        .section ul { margin: 10px 0 12px; padding-left: 22px; color: var(--text-light); }
+        .section li { margin-bottom: 8px; }
+        table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; }
+        th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--text-light); }
+        th { color: var(--navy); font-weight: 600; background: var(--bg); }
+        .footer-note { text-align: center; color: var(--text-light); font-size: 14px; margin-top: 28px; padding: 20px; }
+        .footer-note a { font-weight: 600; }
+        @media (max-width: 640px) {
+            .hero { padding: 28px 22px; } .hero h1 { font-size: 24px; } .section { padding: 22px 20px; }
+            table, thead, tbody, th, td, tr { display: block; } th { display: none; }
+            td { border: none; padding: 4px 0; } td::before { content: attr(data-label) ": "; font-weight: 600; color: var(--navy); }
+            tr { border-bottom: 1px solid var(--border); padding: 10px 0; }
+        }
+    </style>
+</head>
+<body>
+    <main class="page">
+        <div class="lang-switch" role="group" aria-label="Language / Idioma">
+            <button type="button" data-lang="en">EN</button>
+            <button type="button" data-lang="es">ES</button>
+        </div>
+
+        <!-- ══════════════════ ENGLISH ══════════════════ -->
+        <div class="lang-block" data-lang="en">
+            <header class="hero">
+                <div class="hero-kicker">AI Invoice Reader · monday.com app</div>
+                <h1>Privacy Policy</h1>
+                <div class="updated">Last updated: July 6, 2026</div>
+            </header>
+
+            <section class="section">
+                <h2>1. Who we are</h2>
+                <p><strong>AI Invoice Reader</strong> ("the App", "we") is an application for the
+                monday.com marketplace, operated by <strong>M&amp;P CONSULTING SERVICES LLC.</strong>
+                ("the Company"). The App reads invoice PDFs and images attached to your monday.com
+                board items using artificial intelligence and automatically fills the board columns
+                you map (invoice number, dates, amounts, supplier and customer data, and similar
+                fields).</p>
+                <p>This Privacy Policy explains what data we process, for what purpose, with whom we
+                share it, and how we protect it. By installing or using the App, you accept this
+                Policy.</p>
+            </section>
+
+            <section class="section">
+                <h2>2. What data we process and why</h2>
+
+                <h3>2.1 The invoice file you upload</h3>
+                <p>When your automation runs, the App downloads the invoice file (PDF or image)
+                attached to the board item and sends it to our AI provider (Anthropic — Claude) to
+                extract the invoice fields. The file is processed <strong>transiently, in memory,
+                for that single extraction</strong>; we do not store a copy of the file on our
+                servers.</p>
+
+                <h3>2.2 The extracted values</h3>
+                <p>The values read from the invoice (numbers, dates, amounts, names, tax IDs,
+                addresses) are <strong>written back to your own monday.com board</strong>, into the
+                columns you mapped. We do not keep a copy of these values in our database, with one
+                minimal exception: if you enable the "avoid duplicates" rule, we store a
+                <strong>deduplication key</strong> derived from the supplier tax ID and the invoice
+                number (normalized) so we can flag the same invoice if it appears again.</p>
+
+                <h3>2.3 monday.com access</h3>
+                <p>To read the board item and write the result, the App uses the
+                <strong>short-lived token that monday.com includes in each automation execution</strong>,
+                and the session token monday.com issues to the configuration view. These tokens are
+                used in memory for a single request and are not persisted. We also process your
+                monday.com account and board identifiers solely to isolate each customer's
+                configuration (multi-tenant separation).</p>
+
+                <h3>2.4 Configuration</h3>
+                <p>We store your board configuration: the column mapping, the optional country and
+                currency hints, the trigger settings, and the language. This is setup data, not
+                personal data about third parties.</p>
+
+                <h3>2.5 Operational logs</h3>
+                <p>For reliability and support we keep minimal per-reading metadata: account and
+                board identifiers, the detected country code, the AI model used, token counts, and a
+                success/error status. We do not log the invoice contents, tokens, or secrets.</p>
+            </section>
+
+            <section class="section">
+                <h2>3. Third-party services we use</h2>
+                <p>The App relies on the following providers. With each one we share only the data
+                strictly necessary for the stated purpose.</p>
+                <table>
+                    <thead>
+                        <tr><th>Provider</th><th>Where</th><th>Purpose and data involved</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td data-label="Provider"><strong>monday.com</strong></td>
+                            <td data-label="Where">Frontend and backend</td>
+                            <td data-label="Purpose">Host platform. Reading the board item's file and writing back the extracted values and status. Session/automation tokens are validated to authenticate each request.</td>
+                        </tr>
+                        <tr>
+                            <td data-label="Provider"><strong>Anthropic</strong> (Claude API)</td>
+                            <td data-label="Where">Backend</td>
+                            <td data-label="Purpose">AI extraction. The invoice file is sent to Anthropic's API to read its fields. Per Anthropic's commercial API terms, inputs and outputs are <strong>not used to train their models</strong>. The file is processed transiently to return the extracted data.</td>
+                        </tr>
+                        <tr>
+                            <td data-label="Provider"><strong>DigitalOcean</strong></td>
+                            <td data-label="Where">Backend</td>
+                            <td data-label="Purpose">Cloud infrastructure: the application server and the managed PostgreSQL database where your configuration and the deduplication keys are stored.</td>
+                        </tr>
+                        <tr>
+                            <td data-label="Provider"><strong>Cloudflare</strong></td>
+                            <td data-label="Where">Frontend and backend</td>
+                            <td data-label="Purpose">DNS, TLS/HTTPS encryption, and CDN. All traffic to and from the App passes through Cloudflare encrypted.</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p>We do not sell your data and we do not share it with any party other than those
+                listed above.</p>
+            </section>
+
+            <section class="section">
+                <h2>4. How we protect your data</h2>
+                <ul>
+                    <li><strong>No credential collection:</strong> the App does not ask for, collect, or store any user password, API token, or certificate. It relies solely on monday.com's seamless, short-lived tokens.</li>
+                    <li><strong>Encryption in transit:</strong> all traffic uses HTTPS/TLS (via Cloudflare); the database connection uses PostgreSQL SSL, validating DigitalOcean's certificate authority.</li>
+                    <li><strong>Database not publicly exposed:</strong> access to the managed PostgreSQL database is restricted to the application server (trusted sources); it does not accept connections from the public internet.</li>
+                    <li><strong>Per-request authentication:</strong> each request is authenticated by verifying the JWT signed by monday.com with the App's secret before any processing.</li>
+                    <li><strong>Per-customer isolation:</strong> configuration is segmented by account and board; a customer can only access their own data.</li>
+                    <li><strong>Minimal retention:</strong> the invoice file is never stored; only configuration, a derived deduplication key, and operational metadata are kept.</li>
+                </ul>
+            </section>
+
+            <section class="section">
+                <h2>5. Data retention and deletion</h2>
+                <p>We keep your configuration and deduplication keys only while the App is installed
+                and for as long as necessary to provide the service.</p>
+                <p>When you <strong>uninstall the App</strong>, all of your data (configuration,
+                deduplication keys, and operational logs) is <strong>automatically and permanently
+                deleted</strong> from our database. You may also request deletion of your data at any
+                time by contacting us.</p>
+            </section>
+
+            <section class="section">
+                <h2>6. Your rights</h2>
+                <p>Subject to applicable law, you may request access to, correction of, or deletion
+                of your data, and object to or restrict certain processing. To exercise any of these
+                rights, contact us at the address below. We will respond within a reasonable time.</p>
+            </section>
+
+            <section class="section">
+                <h2>7. Changes to this Policy</h2>
+                <p>We may update this Privacy Policy from time to time. Material changes will be
+                reflected by updating the "Last updated" date above. Continued use of the App after
+                the changes take effect implies acceptance of the updated Policy.</p>
+            </section>
+
+            <section class="section">
+                <h2>8. Contact</h2>
+                <p>For any privacy question or request, contact
+                <strong>M&amp;P CONSULTING SERVICES LLC.</strong> at
+                <a href="mailto:invoice-reader@theautomationpartner.com">invoice-reader@theautomationpartner.com</a>.</p>
+            </section>
+
+            <div class="footer-note">
+                AI Invoice Reader — <a href="https://theautomationpartner.com" target="_blank" rel="noopener">M&amp;P CONSULTING SERVICES LLC.</a>
+                · <a href="/terms">Terms of Service</a>
+            </div>
+        </div>
+
+        <!-- ══════════════════ ESPAÑOL ══════════════════ -->
+        <div class="lang-block" data-lang="es">
+            <header class="hero">
+                <div class="hero-kicker">AI Invoice Reader · app de monday.com</div>
+                <h1>Política de Privacidad</h1>
+                <div class="updated">Última actualización: 6 de julio de 2026</div>
+            </header>
+
+            <section class="section">
+                <h2>1. Quiénes somos</h2>
+                <p><strong>AI Invoice Reader</strong> ("la App", "nosotros") es una aplicación para
+                el marketplace de monday.com, operada por <strong>M&amp;P CONSULTING SERVICES LLC.</strong>
+                ("la Empresa"). La App lee facturas en PDF e imágenes adjuntas a los ítems de tu
+                tablero de monday.com usando inteligencia artificial y completa automáticamente las
+                columnas que mapees (número de factura, fechas, importes, datos del emisor y del
+                cliente, y campos similares).</p>
+                <p>Esta Política de Privacidad explica qué datos procesamos, con qué fin, con quién
+                los compartimos y cómo los protegemos. Al instalar o usar la App, aceptás esta
+                Política.</p>
+            </section>
+
+            <section class="section">
+                <h2>2. Qué datos procesamos y por qué</h2>
+
+                <h3>2.1 El archivo de la factura que subís</h3>
+                <p>Cuando corre tu automatización, la App descarga el archivo de la factura (PDF o
+                imagen) adjunto al ítem y lo envía a nuestro proveedor de IA (Anthropic — Claude)
+                para extraer los campos. El archivo se procesa <strong>de forma transitoria, en
+                memoria, para esa única extracción</strong>; no guardamos una copia del archivo en
+                nuestros servidores.</p>
+
+                <h3>2.2 Los valores extraídos</h3>
+                <p>Los valores leídos de la factura (números, fechas, importes, nombres, IDs
+                fiscales, domicilios) se <strong>escriben en tu propio tablero de monday.com</strong>,
+                en las columnas que mapeaste. No conservamos una copia de estos valores en nuestra
+                base de datos, con una única excepción mínima: si activás la regla "evitar
+                duplicados", guardamos una <strong>llave de deduplicación</strong> derivada del ID
+                fiscal del emisor y el número de factura (normalizados), para poder avisarte si la
+                misma factura aparece de nuevo.</p>
+
+                <h3>2.3 Acceso a monday.com</h3>
+                <p>Para leer el ítem y escribir el resultado, la App usa el <strong>token de corta
+                duración que monday.com incluye en cada ejecución de la automatización</strong> y el
+                token de sesión que monday.com emite a la vista de configuración. Estos tokens se
+                usan en memoria para una única solicitud y no se persisten. También procesamos los
+                identificadores de tu cuenta y tablero de monday.com con el único fin de aislar la
+                configuración de cada cliente (separación multi-tenant).</p>
+
+                <h3>2.4 Configuración</h3>
+                <p>Almacenamos la configuración de tu tablero: el mapeo de columnas, las pistas
+                opcionales de país y moneda, los ajustes del disparador y el idioma. Son datos de
+                configuración, no datos personales de terceros.</p>
+
+                <h3>2.5 Registros operativos</h3>
+                <p>Por confiabilidad y soporte guardamos metadatos mínimos por lectura:
+                identificadores de cuenta y tablero, el código de país detectado, el modelo de IA
+                usado, conteos de tokens y un estado de éxito/error. No registramos el contenido de
+                la factura, ni tokens, ni secretos.</p>
+            </section>
+
+            <section class="section">
+                <h2>3. Servicios de terceros que utilizamos</h2>
+                <p>La App se apoya en los siguientes proveedores. Con cada uno compartimos únicamente
+                los datos estrictamente necesarios para el fin indicado.</p>
+                <table>
+                    <thead>
+                        <tr><th>Proveedor</th><th>Dónde</th><th>Propósito y datos involucrados</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td data-label="Proveedor"><strong>monday.com</strong></td>
+                            <td data-label="Dónde">Frontend y backend</td>
+                            <td data-label="Propósito">Plataforma anfitriona. Lectura del archivo del ítem y escritura de los valores extraídos y el estado. Los tokens de sesión/automatización se validan para autenticar cada solicitud.</td>
+                        </tr>
+                        <tr>
+                            <td data-label="Proveedor"><strong>Anthropic</strong> (Claude API)</td>
+                            <td data-label="Dónde">Backend</td>
+                            <td data-label="Propósito">Extracción con IA. El archivo de la factura se envía a la API de Anthropic para leer sus campos. Según los términos de la API comercial de Anthropic, las entradas y salidas <strong>no se usan para entrenar sus modelos</strong>. El archivo se procesa de forma transitoria para devolver los datos extraídos.</td>
+                        </tr>
+                        <tr>
+                            <td data-label="Proveedor"><strong>DigitalOcean</strong></td>
+                            <td data-label="Dónde">Backend</td>
+                            <td data-label="Propósito">Infraestructura en la nube: el servidor de la aplicación y la base de datos PostgreSQL administrada donde se almacenan tu configuración y las llaves de deduplicación.</td>
+                        </tr>
+                        <tr>
+                            <td data-label="Proveedor"><strong>Cloudflare</strong></td>
+                            <td data-label="Dónde">Frontend y backend</td>
+                            <td data-label="Propósito">DNS, cifrado TLS/HTTPS y CDN. Todo el tráfico desde y hacia la App pasa por Cloudflare en forma cifrada.</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p>No vendemos tus datos y no los compartimos con ninguna parte distinta de las
+                listadas arriba.</p>
+            </section>
+
+            <section class="section">
+                <h2>4. Cómo protegemos tus datos</h2>
+                <ul>
+                    <li><strong>No recolectamos credenciales:</strong> la App no pide, recolecta ni almacena ninguna contraseña, token de API ni certificado del usuario. Se apoya únicamente en los tokens seamless de corta duración de monday.com.</li>
+                    <li><strong>Cifrado en tránsito:</strong> todo el tráfico usa HTTPS/TLS (vía Cloudflare); la conexión a la base de datos usa SSL de PostgreSQL, validando la autoridad certificante de DigitalOcean.</li>
+                    <li><strong>Base de datos no expuesta públicamente:</strong> el acceso a la base PostgreSQL administrada está restringido al servidor de la aplicación (trusted sources); no acepta conexiones desde internet.</li>
+                    <li><strong>Autenticación de cada solicitud:</strong> cada solicitud se autentica verificando el JWT firmado por monday.com con el secreto de la App antes de procesar nada.</li>
+                    <li><strong>Aislamiento por cliente:</strong> la configuración se segmenta por cuenta y tablero; un cliente solo puede acceder a sus propios datos.</li>
+                    <li><strong>Retención mínima:</strong> el archivo de la factura nunca se almacena; solo se conservan la configuración, una llave de deduplicación derivada y metadatos operativos.</li>
+                </ul>
+            </section>
+
+            <section class="section">
+                <h2>5. Retención y eliminación de datos</h2>
+                <p>Conservamos tu configuración y las llaves de deduplicación solo mientras la App
+                esté instalada y durante el tiempo necesario para prestar el servicio.</p>
+                <p>Cuando <strong>desinstalás la App</strong>, todos tus datos (configuración, llaves
+                de deduplicación y registros operativos) se <strong>eliminan automática y
+                permanentemente</strong> de nuestra base de datos. También podés solicitar la
+                eliminación de tus datos en cualquier momento contactándonos.</p>
+            </section>
+
+            <section class="section">
+                <h2>6. Tus derechos</h2>
+                <p>Sujeto a la legislación aplicable, podés solicitar el acceso, la rectificación o
+                la eliminación de tus datos, y oponerte o restringir ciertos tratamientos. Para
+                ejercer cualquiera de estos derechos, contactanos a la dirección de abajo.
+                Responderemos en un plazo razonable.</p>
+            </section>
+
+            <section class="section">
+                <h2>7. Cambios en esta Política</h2>
+                <p>Podemos actualizar esta Política de Privacidad cada cierto tiempo. Los cambios
+                relevantes se reflejarán actualizando la fecha de "Última actualización" de arriba.
+                El uso continuado de la App luego de que los cambios entren en vigencia implica la
+                aceptación de la Política actualizada.</p>
+            </section>
+
+            <section class="section">
+                <h2>8. Contacto</h2>
+                <p>Ante cualquier consulta o solicitud sobre privacidad, contactá a
+                <strong>M&amp;P CONSULTING SERVICES LLC.</strong> en
+                <a href="mailto:invoice-reader@theautomationpartner.com">invoice-reader@theautomationpartner.com</a>.</p>
+            </section>
+
+            <div class="footer-note">
+                AI Invoice Reader — <a href="https://theautomationpartner.com" target="_blank" rel="noopener">M&amp;P CONSULTING SERVICES LLC.</a>
+                · <a href="/terms">Términos del Servicio</a>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        (function () {
+            var KEY = "air_lang";
+            var DEFAULT = "en"; // monday exige inglés por defecto
+            function read() {
+                try { var s = localStorage.getItem(KEY); if (s === "es" || s === "en") return s; } catch (e) {}
+                return DEFAULT;
+            }
+            function apply(lang) {
+                document.documentElement.lang = lang;
+                var blocks = document.querySelectorAll(".lang-block");
+                for (var i = 0; i < blocks.length; i++) {
+                    blocks[i].classList.toggle("active", blocks[i].getAttribute("data-lang") === lang);
+                }
+                var btns = document.querySelectorAll(".lang-switch button");
+                for (var j = 0; j < btns.length; j++) {
+                    btns[j].classList.toggle("active", btns[j].getAttribute("data-lang") === lang);
+                }
+                try { localStorage.setItem(KEY, lang); } catch (e) {}
+            }
+            var buttons = document.querySelectorAll(".lang-switch button");
+            for (var k = 0; k < buttons.length; k++) {
+                buttons[k].addEventListener("click", function () { apply(this.getAttribute("data-lang")); });
+            }
+            apply(read());
+        })();
+    </script>
+</body>
+</html>

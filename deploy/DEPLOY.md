@@ -25,9 +25,9 @@ bash /root/setup.sh
 Instala Node 20, nginx, PM2, certbot.
 
 ## 2. Subir el código a /opt/lector-pdf-ia
-**Opción git** (recomendada si el repo está en GitHub):
+**Opción git** (recomendada — el repo es público, no necesita auth):
 ```
-git clone <URL_DEL_REPO> /opt/lector-pdf-ia
+git clone https://github.com/theautomationpartner/APP-Lector-De-PDF-Monday.git /opt/lector-pdf-ia
 ```
 **Opción scp/rsync** (sin git todavía), desde tu PC en la carpeta `lector-pdf-ia/`:
 ```

@@ -25,24 +25,43 @@ export async function getBoardIdFromItem(token, itemId) {
 }
 
 // Busca el PDF más reciente subido a alguna columna de archivo del item.
-export async function getLatestPdfUrl(token, itemId) {
+// Tipos de archivo que Claude puede leer (PDF + imágenes).
+const SUPPORTED_MIME = {
+  pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+  png: 'image/png', gif: 'image/gif', webp: 'image/webp',
+}
+const mimeOf = (name = '') => {
+  const m = String(name).toLowerCase().match(/\.([a-z0-9]+)(?:\?|$)/)
+  return m ? (SUPPORTED_MIME[m[1]] || null) : null
+}
+
+// Devuelve { url, mediaType } del último archivo soportado (PDF o imagen/foto) del
+// item. preferredColumnId = columna de archivo elegida en la config (si no, todas).
+export async function getLatestFileUrl(token, itemId, preferredColumnId = '') {
   const d = await gql(token, `query { items(ids: [${Number(itemId)}]) { column_values { id type value } } }`)
-  const cols = d?.items?.[0]?.column_values || []
+  const allCols = d?.items?.[0]?.column_values || []
+  const fileCols = allCols.filter((c) => c.type === 'file' && c.value)
+  let cols = fileCols
+  if (preferredColumnId) {
+    const pref = fileCols.filter((c) => c.id === preferredColumnId)
+    cols = pref.length ? pref : fileCols
+  }
   const assetIds = []
   for (const c of cols) {
-    if (c.type === 'file' && c.value) {
-      try {
-        const files = JSON.parse(c.value).files || []
-        for (const f of files) if (f.assetId) assetIds.push(Number(f.assetId))
-      } catch { /* value no parseable */ }
-    }
+    try {
+      const files = JSON.parse(c.value).files || []
+      for (const f of files) if (f.assetId) assetIds.push(Number(f.assetId))
+    } catch { /* value no parseable */ }
   }
   if (!assetIds.length) return null
   const ad = await gql(token, `query { assets(ids: [${assetIds.join(',')}]) { id name public_url } }`)
-  const assets = ad?.assets || []
-  const pdfs = assets.filter((a) => /\.pdf$/i.test(a.name || ''))
-  const chosen = (pdfs.length ? pdfs : assets).slice(-1)[0] // el último subido
-  return chosen?.public_url || null
+  const supported = (ad?.assets || [])
+    .map((a) => ({ ...a, mime: mimeOf(a.name) || mimeOf(a.public_url) }))
+    .filter((a) => a.mime)
+  if (!supported.length) return null
+  const pdfs = supported.filter((a) => a.mime === 'application/pdf')
+  const chosen = (pdfs.length ? pdfs : supported).slice(-1)[0] // preferí PDF; si no, la última imagen
+  return { url: chosen.public_url, mediaType: chosen.mime }
 }
 
 // Tipos de columna del board { columnId: type }.
@@ -52,13 +71,22 @@ export async function getColumnTypes(token, boardId) {
   return Object.fromEntries(cols.map((c) => [c.id, c.type]))
 }
 
+// Normaliza montos de cualquier locale a número JS. Red de seguridad por si la IA
+// devuelve el separador dudoso (ej. Chile "354.172" = 354172, no 354.172).
 function toNumber(raw) {
   let s = String(raw).replace(/[^\d.,-]/g, '')
   if (!s) return null
-  if (s.includes(',') && s.includes('.')) {
-    s = s.replace(/\./g, '').replace(',', '.') // formato AR: 1.234,56
-  } else if (s.includes(',')) {
-    s = s.replace(',', '.') // 1234,56
+  const hasDot = s.includes('.'), hasComma = s.includes(',')
+  if (hasDot && hasComma) {
+    // el separador que aparece ÚLTIMO es el decimal; el otro es de miles
+    if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.') // 1.234,56
+    else s = s.replace(/,/g, '')                                                            // 1,234.56
+  } else if (hasComma) {
+    const p = s.split(',')
+    s = (p.length === 2 && p[1].length <= 2) ? p[0] + '.' + p[1] : s.replace(/,/g, '')       // 1234,56 vs 1,234 (miles)
+  } else if (hasDot) {
+    const p = s.split('.')
+    if (!(p.length === 2 && p[1].length <= 2)) s = s.replace(/\./g, '')                      // 354.172 / 1.234.567 = miles
   }
   const n = Number(s)
   return Number.isFinite(n) ? n : null
@@ -85,6 +113,7 @@ export function buildColumnValues(mapping, data, colTypes) {
     const raw = (data[field] ?? '').toString().trim()
     if (!raw) continue
     const type = colTypes[colId]
+    if (type === undefined) continue // la columna ya no existe en el tablero → ignorar (no romper todo el write)
     if (NUMERIC_FIELDS.has(field) || type === 'numbers' || type === 'numeric') {
       const n = toNumber(raw)
       if (n != null) cv[colId] = String(n)

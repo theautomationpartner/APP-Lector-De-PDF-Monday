@@ -34,6 +34,19 @@ CREATE TABLE IF NOT EXISTS board_configs (
   PRIMARY KEY (account_id, board_id)
 );
 
+-- Reglas de negocio por tablero (agregadas 2026-07-03). ALTER idempotente porque
+-- CREATE TABLE IF NOT EXISTS no agrega columnas a un board_configs ya existente.
+ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS dedup_enabled  BOOLEAN NOT NULL DEFAULT false;      -- evitar duplicados
+ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS filter_mode    TEXT    NOT NULL DEFAULT 'all';       -- 'all' | 'supplier' | 'customer'
+ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS filter_tax_ids JSONB   NOT NULL DEFAULT '[]'::jsonb; -- lista blanca de CUITs
+-- Países / monedas que el tablero maneja (multi-selección, agregado 2026-07-03).
+-- Vacío = todos (la IA detecta cada factura). country_override/currency_override
+-- quedan como el primer elegido (hint para el extractor).
+ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS countries  JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS currencies JSONB NOT NULL DEFAULT '[]'::jsonb;
+-- Columna de archivo elegida (de dónde sale el PDF). Vacío = auto-detectar.
+ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS file_column_id TEXT;
+
 -- ───────────────────────────────────────────────────────────────────────────
 -- extractions: histórico de cada lectura. Base para analytics / cobrar por uso.
 -- ───────────────────────────────────────────────────────────────────────────
@@ -54,3 +67,18 @@ CREATE TABLE IF NOT EXISTS extractions (
 
 CREATE INDEX IF NOT EXISTS idx_extractions_account ON extractions(account_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_extractions_board   ON extractions(board_id, created_at);
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- invoice_keys: facturas ya cargadas (para el anti-duplicados). Llave por
+-- (cuenta, tablero, dedup_key). Se registra SIEMPRE que una lectura carga OK,
+-- esté el toggle de dedup ON u OFF (así hay histórico si se activa luego).
+-- dedup_key = normalizado: taxid_emisor|numero_comprobante|tipo.
+-- ───────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS invoice_keys (
+  account_id  BIGINT      NOT NULL,
+  board_id    BIGINT      NOT NULL,
+  dedup_key   TEXT        NOT NULL,
+  item_id     BIGINT,                 -- ítem que la cargó (para no marcarse a sí mismo)
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (account_id, board_id, dedup_key)
+);
