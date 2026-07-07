@@ -118,6 +118,17 @@ const en = {
   'field.br_protocolo': 'Authorization protocol',
   'field.br_icms': 'ICMS',
   'field.br_ipi': 'IPI',
+  // Capa Colombia
+  'countryGroup.CO': 'Colombia-specific fields 🇨🇴',
+  'field.co_cufe': 'CUFE',
+  'field.co_resolucion_dian': 'DIAN resolution',
+  'field.co_medio_pago': 'Payment means',
+  // Capa Perú
+  'countryGroup.PE': 'Peru-specific fields 🇵🇪',
+  'field.pe_tipo_comprobante': 'Document type (01/03/07/08)',
+  'field.pe_serie': 'Series (F/B)',
+  'field.pe_codigo_hash': 'Security hash',
+  'country.PE': '🇵🇪 Peru',
 
   // Wizard / sidebar
   'brand.name': 'Invoice Reader',
@@ -309,6 +320,17 @@ const es = {
   'field.br_protocolo': 'Protocolo de autorización',
   'field.br_icms': 'ICMS',
   'field.br_ipi': 'IPI',
+  // Capa Colombia
+  'countryGroup.CO': 'Campos de Colombia 🇨🇴',
+  'field.co_cufe': 'CUFE',
+  'field.co_resolucion_dian': 'Resolución DIAN',
+  'field.co_medio_pago': 'Medio de pago',
+  // Capa Perú
+  'countryGroup.PE': 'Campos de Perú 🇵🇪',
+  'field.pe_tipo_comprobante': 'Tipo de comprobante (01/03/07/08)',
+  'field.pe_serie': 'Serie (F/B)',
+  'field.pe_codigo_hash': 'Código hash',
+  'country.PE': '🇵🇪 Perú',
 
   // Wizard / sidebar
   'brand.name': 'Lector de Facturas',

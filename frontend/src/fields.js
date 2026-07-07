@@ -19,6 +19,8 @@ export const COUNTRY_FIELDS = {
   UY: ['uy_tipo_cfe', 'uy_serie', 'uy_cae', 'uy_cae_vto', 'uy_codigo_seguridad'],
   MX: ['mx_folio_fiscal', 'mx_uso_cfdi', 'mx_regimen_fiscal', 'mx_metodo_pago', 'mx_forma_pago', 'mx_tipo_comprobante'],
   BR: ['br_chave_acesso', 'br_serie', 'br_natureza_operacao', 'br_protocolo', 'br_icms', 'br_ipi'],
+  CO: ['co_cufe', 'co_resolucion_dian', 'co_medio_pago'],
+  PE: ['pe_tipo_comprobante', 'pe_serie', 'pe_codigo_hash'],
 }
 
 // Universales + capas de los países seleccionados (sin duplicar).
@@ -29,7 +31,7 @@ export function fieldsForCountries(countries = []) {
 
 // Listas curadas para los defaults (ISO). "" = auto-detect.
 export const COUNTRIES = [
-  'AR', 'AU', 'BR', 'CA', 'CL', 'CO', 'DE', 'ES', 'FR', 'GB', 'IT', 'MX', 'PT', 'US', 'UY',
+  'AR', 'AU', 'BR', 'CA', 'CL', 'CO', 'DE', 'ES', 'FR', 'GB', 'IT', 'MX', 'PE', 'PT', 'US', 'UY',
 ]
 export const CURRENCIES = [
   'USD', 'EUR', 'ARS', 'BRL', 'CAD', 'CLP', 'COP', 'GBP', 'MXN', 'AUD',

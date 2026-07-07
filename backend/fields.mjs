@@ -61,6 +61,16 @@ export const COUNTRY_FIELDS = {
     ['br_icms',              'ICMS tax amount — total "Valor do ICMS". Numeric value with a dot decimal, NO thousands separator, NO currency symbol. Return "" if not present.'],
     ['br_ipi',               'IPI tax amount — total "Valor do IPI". Numeric value with a dot decimal, NO thousands separator, NO currency symbol. Return "" if not present.'],
   ],
+  CO: [
+    ['co_cufe',             'CUFE — "Código Único de Factura Electrónica" (a ~96-character alphanumeric code / SHA hash) assigned by DIAN. Return exactly as printed, every character.'],
+    ['co_resolucion_dian',  'DIAN numbering authorization — "Resolución DIAN" number, with authorized range/validity if shown.'],
+    ['co_medio_pago',       'Payment means — "Medio de Pago" (e.g. "Efectivo", "Transferencia", "Tarjeta"), distinct from the payment condition (contado/crédito).'],
+  ],
+  PE: [
+    ['pe_tipo_comprobante', 'SUNAT document type — "Tipo de Comprobante" code (01 Factura, 03 Boleta de Venta, 07 Nota de Crédito, 08 Nota de Débito) with its name if shown.'],
+    ['pe_serie',            'Voucher series — "Serie" (4 alphanumeric characters, starting with F for facturas or B for boletas, e.g. "F001"). Separate from the correlative number.'],
+    ['pe_codigo_hash',      'Security digest — the "Código Hash / Resumen" of the CPE (shown near the SUNAT barcode). Return exactly as printed.'],
+  ],
 }
 
 // Universales + capas de los países configurados (sin duplicar IDs). Orden estable.
