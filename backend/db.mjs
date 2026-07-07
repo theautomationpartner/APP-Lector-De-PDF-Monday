@@ -120,6 +120,20 @@ export async function logExtraction(row = {}) {
   )
 }
 
+// ── Uso: cuántas facturas leyó la cuenta (para mostrarle el contador al usuario) ──
+// Solo lecturas exitosas (status='ok'). Por cuenta (unidad de facturación futura).
+export async function getUsage(accountId) {
+  const { rows } = await pool.query(
+    `select
+       count(*) filter (where status = 'ok') as total,
+       count(*) filter (where status = 'ok' and created_at >= date_trunc('month', now())) as month
+     from extractions where account_id = $1`,
+    [String(accountId)],
+  )
+  const r = rows[0] || {}
+  return { total: Number(r.total || 0), month: Number(r.month || 0) }
+}
+
 // ── Borrado de datos de la cuenta (GDPR / desinstalación) ──
 // Política de Monday: eliminar los datos del cliente ≤10 días post-uninstall.
 // Se dispara desde el evento 'uninstall' del webhook de lifecycle. Transacción

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import mondaySdk from 'monday-sdk-js'
 import { makeT, LANGUAGES } from './i18n.js'
-import { ALL_FIELDS, COUNTRIES, CURRENCIES, autoMapColumns } from './fields.js'
+import { ALL_FIELDS, COUNTRY_FIELDS, fieldsForCountries, COUNTRIES, autoMapColumns } from './fields.js'
 
 // Instancia única del SDK de monday. Dentro del iframe del board, monday.api()
 // usa la sesión del usuario logueado.
@@ -32,8 +32,7 @@ const DEFAULT_CONFIG = {
   language: 'en',
   mapping: {},
   fileColumnId: '',        // vacío = auto-detectar la columna de archivo
-  countries: [],           // vacío = todos
-  currencies: [],          // vacío = todos
+  countries: [],           // vacío = solo campos universales
   dedupEnabled: false,
 }
 
@@ -50,7 +49,6 @@ export default function App() {
   const [mapping, setMapping] = useState({})
   const [fileColumnId, setFileColumnId] = useState('')
   const [countries, setCountries] = useState([])
-  const [currencies, setCurrencies] = useState([])
   const [dedupEnabled, setDedupEnabled] = useState(false)
 
   const [saveState, setSaveState] = useState('idle') // idle | saving | saved | error
@@ -66,6 +64,9 @@ export default function App() {
     try { return localStorage.getItem('air_welcome_dismissed') === '1' } catch { return false }
   })
   const valueCreatedFired = useRef(false)
+
+  // Contador de uso (facturas leídas) que ve el usuario. Solo el conteo.
+  const [usage, setUsage] = useState(null)
 
   const t = useMemo(() => makeT(language), [language])
 
@@ -103,14 +104,16 @@ export default function App() {
   }, [boardId, previewMode])
 
   const ready = !loading && !error && (previewMode || boardId)
-  const mappedCount = useMemo(() => ALL_FIELDS.filter((id) => mapping[id]).length, [mapping])
+  // Campos activos = universales + capas de los países elegidos (ej. AR → CAE, etc.).
+  const activeFields = useMemo(() => fieldsForCountries(countries), [countries])
+  const mappedCount = useMemo(() => activeFields.filter((id) => mapping[id]).length, [mapping, activeFields])
   const fileColumns = useMemo(() => columns.filter((c) => c.type === 'file'), [columns])
   // Columnas usadas por más de un campo (se pisan entre sí).
   const dupColumns = useMemo(() => {
     const seen = new Set(), dups = new Set()
-    for (const f of ALL_FIELDS) { const c = mapping[f]; if (c) { if (seen.has(c)) dups.add(c); else seen.add(c) } }
+    for (const f of activeFields) { const c = mapping[f]; if (c) { if (seen.has(c)) dups.add(c); else seen.add(c) } }
     return dups.size
-  }, [mapping])
+  }, [mapping, activeFields])
 
   // 3) Cargar la config guardada (backend/Postgres; localStorage en preview).
   useEffect(() => {
@@ -122,7 +125,6 @@ export default function App() {
       setMapping(cfg.mapping || {})
       setFileColumnId(cfg.fileColumnId || '')
       setCountries(cfg.countries || [])
-      setCurrencies(cfg.currencies || [])
       setDedupEnabled(!!cfg.dedupEnabled)
       setDirty(false)
     }
@@ -168,6 +170,21 @@ export default function App() {
     }
   }, [mappedCount, dirty, saveState, previewMode])
 
+  // Traer el contador de facturas leídas (para mostrarlo en la barra lateral).
+  useEffect(() => {
+    if (!ready) return
+    if (previewMode) { setUsage({ month: 3, total: 27 }); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const token = await getSessionToken()
+        const r = await fetch('/api/usage', { headers: token ? { Authorization: token } : {} })
+        if (r.ok && !cancelled) setUsage(await r.json())
+      } catch { /* sin datos de uso */ }
+    })()
+    return () => { cancelled = true }
+  }, [ready, previewMode])
+
   const dismissWelcome = () => {
     try { localStorage.setItem('air_welcome_dismissed', '1') } catch { /* noop */ }
     setWelcomeDismissed(true)
@@ -177,13 +194,12 @@ export default function App() {
   const handleMap = (fieldId, value) => { setMapping((m) => ({ ...m, [fieldId]: value })); touch() }
   const changeLanguage = (lng) => { setLanguage(lng); touch() }
   const toggleCountry = (c) => { setCountries((a) => a.includes(c) ? a.filter((x) => x !== c) : [...a, c]); touch() }
-  const toggleCurrency = (c) => { setCurrencies((a) => a.includes(c) ? a.filter((x) => x !== c) : [...a, c]); touch() }
 
   // Nada es obligatorio: se puede guardar cualquier cambio.
   const canSave = dirty && saveState !== 'saving'
 
   const collectConfig = () => ({
-    language, mapping, fileColumnId, countries, currencies,
+    language, mapping, fileColumnId, countries,
     dedupEnabled,
   })
 
@@ -209,7 +225,7 @@ export default function App() {
 
 
   // ─── Estado de los pasos (solo el mapeo es requerido; el resto opcional) ───
-  const done1 = countries.length > 0 || currencies.length > 0
+  const done1 = countries.length > 0
   const done2 = mappedCount > 0
   const rulesTouched = dedupEnabled
   const completed = [done1, done2, rulesTouched].filter(Boolean).length
@@ -311,6 +327,12 @@ export default function App() {
         </div>
 
         <div className="sb-foot">
+          {usage && (
+            <div className="sb-usage">
+              <span className="sb-usage-label">{t('usage.label')}</span>
+              <span className="sb-usage-val">{t('usage.value', { month: usage.month, total: usage.total })}</span>
+            </div>
+          )}
           <div className="lang-switch">
             {LANGUAGES.map((l) => (
               <button key={l.code} className={language === l.code ? 'active' : ''} onClick={() => changeLanguage(l.code)}>
@@ -355,7 +377,7 @@ export default function App() {
         {ready && (
           <>
             <div className="gd-content">
-              {/* ───── Paso 1 · País e idioma ───── */}
+              {/* ───── Paso 1 · Países ───── */}
               {step === 1 && (
                 <section>
                   <div className="step-eyebrow">{t('step1.eyebrow')}</div>
@@ -370,19 +392,7 @@ export default function App() {
                             type="button" key={c}
                             className={`chip ${countries.includes(c) ? 'on' : ''}`}
                             onClick={() => toggleCountry(c)}
-                          >{c}</button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="field-block">
-                      <label className="gd-label">{t('step1.currencies')}</label>
-                      <div className="chip-select">
-                        {CURRENCIES.map((c) => (
-                          <button
-                            type="button" key={c}
-                            className={`chip ${currencies.includes(c) ? 'on' : ''}`}
-                            onClick={() => toggleCurrency(c)}
-                          >{c}</button>
+                          >{t('country.' + c)}</button>
                         ))}
                       </div>
                     </div>
@@ -452,6 +462,19 @@ export default function App() {
                       <Field id="payment_terms" />
                     </div>
                   </div>
+
+                  {/* Capas de campos específicos por país (solo los países configurados) */}
+                  {countries.filter((c) => COUNTRY_FIELDS[c]?.length).map((c) => (
+                    <div className="gd-card country-card" style={{ marginTop: 18 }} key={c}>
+                      <div className="gd-card-head">
+                        <span className="gd-card-title">{t(`countryGroup.${c}`)}</span>
+                        <span className="gd-card-tag">{t('countryGroup.tag')}</span>
+                      </div>
+                      <div className="country-grid">
+                        {COUNTRY_FIELDS[c].map((id) => <Field id={id} key={id} />)}
+                      </div>
+                    </div>
+                  ))}
                 </section>
               )}
 
@@ -486,7 +509,7 @@ export default function App() {
 
             {/* ───── Save bar ───── */}
             <div className="gd-savebar">
-              <span className="map-counter">{t('save.counter', { n: mappedCount, total: ALL_FIELDS.length })}</span>
+              <span className="map-counter">{t('save.counter', { n: mappedCount, total: activeFields.length })}</span>
               <span className={`save-status ${saveState === 'idle' && dirty ? 'idle' : saveState}`}>
                 {saveState === 'saving' && t('save.saving')}
                 {saveState === 'saved' && t('save.saved')}

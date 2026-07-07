@@ -11,9 +11,25 @@ export const ALL_FIELDS = [
   'payment_terms',
 ]
 
+// Capas de campos ESPECÍFICOS por país (opcionales). Se muestran en el Mapeo solo
+// si el tablero configuró ese país. Deben coincidir con backend/fields.mjs.
+export const COUNTRY_FIELDS = {
+  AR: ['ar_tipo_comprobante', 'ar_punto_venta', 'ar_cae', 'ar_cae_vto', 'ar_condicion_iva', 'ar_condicion_iva_receptor', 'ar_otros_tributos'],
+  CL: ['cl_tipo_dte', 'cl_giro_emisor', 'cl_impuesto_adicional', 'cl_monto_exento'],
+  UY: ['uy_tipo_cfe', 'uy_serie', 'uy_cae', 'uy_cae_vto', 'uy_codigo_seguridad'],
+  MX: ['mx_folio_fiscal', 'mx_uso_cfdi', 'mx_regimen_fiscal', 'mx_metodo_pago', 'mx_forma_pago', 'mx_tipo_comprobante'],
+  BR: ['br_chave_acesso', 'br_serie', 'br_natureza_operacao', 'br_protocolo', 'br_icms', 'br_ipi'],
+}
+
+// Universales + capas de los países seleccionados (sin duplicar).
+export function fieldsForCountries(countries = []) {
+  const extra = (countries || []).flatMap((c) => COUNTRY_FIELDS[c] || [])
+  return [...ALL_FIELDS, ...extra.filter((f) => !ALL_FIELDS.includes(f))]
+}
+
 // Listas curadas para los defaults (ISO). "" = auto-detect.
 export const COUNTRIES = [
-  'AR', 'AU', 'BR', 'CA', 'CL', 'CO', 'DE', 'ES', 'FR', 'GB', 'IT', 'MX', 'PT', 'US',
+  'AR', 'AU', 'BR', 'CA', 'CL', 'CO', 'DE', 'ES', 'FR', 'GB', 'IT', 'MX', 'PT', 'US', 'UY',
 ]
 export const CURRENCIES = [
   'USD', 'EUR', 'ARS', 'BRL', 'CAD', 'CLP', 'COP', 'GBP', 'MXN', 'AUD',
@@ -39,8 +55,8 @@ export const TEMPLATE_COLUMNS = [
 // idioma) + tipo. Es best-effort: pre-mapea y el usuario revisa antes de guardar.
 
 // Campos numéricos y de fecha (para chequear compatibilidad de tipo de columna).
-export const NUMERIC_FIELDS = ['subtotal', 'tax_amount', 'total_amount']
-export const DATE_FIELDS = ['issue_date', 'due_date']
+export const NUMERIC_FIELDS = ['subtotal', 'tax_amount', 'total_amount', 'ar_otros_tributos', 'cl_impuesto_adicional', 'cl_monto_exento', 'br_icms', 'br_ipi']
+export const DATE_FIELDS = ['issue_date', 'due_date', 'ar_cae_vto', 'uy_cae_vto']
 
 // Palabras clave por campo (EN + ES + variantes por país), ya normalizadas
 // (minúsculas, sin acentos ni símbolos). Se busca que el título de la columna

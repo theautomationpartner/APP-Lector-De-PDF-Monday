@@ -9,7 +9,7 @@ import {
   getBoardIdFromItem, getLatestFileUrl, getColumnTypes,
   buildColumnValues, writeColumns, postComment, setStatus, getStatusColumnId,
 } from './monday.mjs'
-import { runStartupMigrations, getBoardConfig, saveBoardConfig, logExtraction, findInvoiceKey, recordInvoiceKey, deleteAccountData } from './db.mjs'
+import { runStartupMigrations, getBoardConfig, saveBoardConfig, logExtraction, findInvoiceKey, recordInvoiceKey, deleteAccountData, getUsage } from './db.mjs'
 import { t, lifecycleLabels } from './i18n.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -80,6 +80,17 @@ app.post('/api/config/:boardId', async (req, res) => {
   }
 })
 
+// Contador de uso para la vista: cuántas facturas leyó la cuenta (mes + total).
+// Solo el CONTEO — el costo/consumo es interno (ver scripts/usage-report.mjs).
+app.get('/api/usage', async (req, res) => {
+  try {
+    const { accountId } = authSession(req)
+    res.json(await getUsage(accountId))
+  } catch (e) {
+    res.status(401).json({ error: e.message })
+  }
+})
+
 // ───────────────────────────────────────────────────────────────────────────
 // Endpoint de la receta — lee el PDF del item y carga las columnas mapeadas.
 // ───────────────────────────────────────────────────────────────────────────
@@ -124,7 +135,7 @@ app.post('/monday/extract', async (req, res) => {
       buf.toString('base64'),
       file.mediaType,
       MODEL,
-      { country: cfg?.country_override || '', currency: cfg?.currency_override || '' },
+      { countries: cfg?.countries || [] },
     )
 
     // 5.5) ANTI-DUPLICADOS (antes de escribir). IDs fiscales normalizados a

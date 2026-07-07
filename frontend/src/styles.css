@@ -345,3 +345,18 @@ textarea.gd-input { resize: vertical; min-height: 88px; font-family: var(--font-
 .welcome-help { display: inline-block; margin-top: 16px; font: 500 13px var(--font-ui); color: var(--ink-500); text-decoration: none; }
 .welcome-help:hover { color: var(--brand-navy); }
 @media (max-width: 560px) { .welcome-card { padding: 30px 24px; } .welcome-title { font-size: 23px; } }
+
+/* ─── Capas de campos por país (Mapeo) ─── */
+.country-card { border-color: var(--accent-100); background: linear-gradient(180deg, var(--accent-bg), var(--ink-0)); }
+.gd-card-tag { font: 600 10px var(--font-ui); text-transform: uppercase; letter-spacing: .05em; color: var(--ink-500); background: var(--ink-100); padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.country-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 22px; }
+@media (max-width: 760px) { .country-grid { grid-template-columns: 1fr; } }
+
+/* ─── Contador de facturas leídas (barra lateral) ─── */
+.sb-usage {
+  display: flex; flex-direction: column; gap: 3px; margin-bottom: 12px;
+  padding: 10px 12px; background: var(--ink-50);
+  border: 1px solid var(--ink-150); border-radius: var(--r);
+}
+.sb-usage-label { font: 600 10px var(--font-ui); text-transform: uppercase; letter-spacing: .05em; color: var(--ink-500); }
+.sb-usage-val { font: 600 13px var(--font-ui); color: var(--ink-900); }

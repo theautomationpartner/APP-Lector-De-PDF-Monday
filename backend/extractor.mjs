@@ -1,31 +1,35 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { FIELDS } from './fields.mjs'
+import { fieldsForCountries } from './fields.mjs'
 import { config } from './config.mjs'
 
 const client = new Anthropic({ apiKey: config.anthropicApiKey })
 
-// Esquema = catálogo + detected_country (meta, para normalización y log).
-const props = Object.fromEntries(FIELDS.map(([id]) => [id, { type: 'string' }]))
-props.detected_country = { type: 'string' }
-const schema = {
-  type: 'object',
-  properties: props,
-  required: [...FIELDS.map(([id]) => id), 'detected_country'],
-  additionalProperties: false,
+// Esquema JSON (catálogo + detected_country) para el set de campos dado. Se arma
+// por llamada porque los campos dependen de los países configurados en el tablero.
+function buildSchema(fields) {
+  const props = Object.fromEntries(fields.map(([id]) => [id, { type: 'string' }]))
+  props.detected_country = { type: 'string' }
+  return {
+    type: 'object',
+    properties: props,
+    required: [...fields.map(([id]) => id), 'detected_country'],
+    additionalProperties: false,
+  }
 }
-
-const fieldGuide = FIELDS.map(([id, desc]) => `- ${id}: ${desc}`).join('\n')
 
 // Manda el archivo (PDF o imagen, base64) a Claude y devuelve { data, usage, model }.
 // mediaType: 'application/pdf' | 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'.
 // hints = { country, currency } de la config, para desambiguar fecha/número/moneda.
 export async function extractInvoice(fileBase64, mediaType = 'application/pdf', model = 'claude-haiku-4-5', hints = {}) {
-  const { country = '', currency = '' } = hints
-  const hintText = (country || currency)
-    ? `\n\nThe account using this app is based in ${country || 'an unknown country'}` +
-      `${currency ? ` and works in ${currency}` : ''}. Use this to resolve ambiguous date formats ` +
-      `(US uses MM/DD/YYYY, most countries DD/MM/YYYY), number separators and currency symbols. ` +
-      `BUT the invoice itself may come from another country, so detect its actual country.`
+  const { countries = [] } = hints
+  // Campos = universales + capas de los países configurados (ej. AR agrega CAE, etc.).
+  const fields = fieldsForCountries(countries)
+  const schema = buildSchema(fields)
+  const fieldGuide = fields.map(([id, desc]) => `- ${id}: ${desc}`).join('\n')
+  const hintText = countries.length
+    ? `\n\nThis board processes invoices from: ${countries.join(', ')}. Use this as context to resolve ` +
+      `ambiguous date formats (US uses MM/DD/YYYY, most countries DD/MM/YYYY), number separators and ` +
+      `currency symbols/codes. BUT an invoice may still be from another country, so always detect its actual country.`
     : ''
 
   const fileBlock = mediaType === 'application/pdf'
