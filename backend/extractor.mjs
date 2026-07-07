@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { fieldsForCountries } from './fields.mjs'
+import { reconcileCodes } from './pdfcodes.mjs'
 import { config } from './config.mjs'
 
 const client = new Anthropic({ apiKey: config.anthropicApiKey })
@@ -71,5 +72,16 @@ export async function extractInvoice(fileBase64, mediaType = 'application/pdf', 
   })
 
   const text = res.content.find((b) => b.type === 'text')?.text || '{}'
-  return { data: JSON.parse(text), usage: res.usage, model }
+  const data = JSON.parse(text)
+
+  // Capa determinística: en PDFs con texto, corrige los códigos largos (chave, CUFE,
+  // CAE, UUID) que el LLM pudo transcribir mal. Gratis, exacto. No aplica a fotos.
+  if (mediaType === 'application/pdf') {
+    try {
+      const fixed = await reconcileCodes(data, fileBase64, fields)
+      if (fixed.length) console.log('[extractor] códigos corregidos desde el texto del PDF:', fixed.join(', '))
+    } catch (e) { console.warn('[extractor] reconcile de códigos falló:', e.message) }
+  }
+
+  return { data, usage: res.usage, model }
 }

@@ -71,6 +71,12 @@ export const COUNTRY_FIELDS = {
     ['pe_serie',            'Voucher series — "Serie" (4 alphanumeric characters, starting with F for facturas or B for boletas, e.g. "F001"). Separate from the correlative number.'],
     ['pe_codigo_hash',      'Security digest — the "Código Hash / Resumen" of the CPE (shown near the SUNAT barcode). Return exactly as printed.'],
   ],
+  EC: [
+    ['ec_clave_acceso',        'Access key — "Clave de Acceso" of the SRI electronic voucher (a 49-digit number). Return exactly as printed, all 49 digits.'],
+    ['ec_numero_autorizacion', 'SRI authorization number — "Número de Autorización" (often identical to the 49-digit clave de acceso). Return exactly as printed.'],
+    ['ec_ambiente',            'Environment — "Ambiente" of the voucher: "Producción" or "Pruebas".'],
+    ['ec_tipo_emision',        'Emission type — "Tipo de Emisión" (e.g. "Normal", "Contingencia").'],
+  ],
 }
 
 // Universales + capas de los países configurados (sin duplicar IDs). Orden estable.

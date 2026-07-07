@@ -93,6 +93,7 @@ const en = {
   'country.CL': '🇨🇱 Chile',
   'country.CO': '🇨🇴 Colombia',
   'country.DE': '🇩🇪 Germany',
+  'country.EC': '🇪🇨 Ecuador',
   'country.ES': '🇪🇸 Spain',
   'country.FR': '🇫🇷 France',
   'country.GB': '🇬🇧 United Kingdom',
@@ -129,6 +130,12 @@ const en = {
   'field.pe_serie': 'Series (F/B)',
   'field.pe_codigo_hash': 'Security hash',
   'country.PE': '🇵🇪 Peru',
+  // Capa Ecuador
+  'countryGroup.EC': 'Ecuador-specific fields 🇪🇨',
+  'field.ec_clave_acceso': 'Access key (49 digits)',
+  'field.ec_numero_autorizacion': 'SRI authorization number',
+  'field.ec_ambiente': 'Environment (Prod/Test)',
+  'field.ec_tipo_emision': 'Emission type',
 
   // Wizard / sidebar
   'brand.name': 'Invoice Reader',
@@ -295,6 +302,7 @@ const es = {
   'country.CL': '🇨🇱 Chile',
   'country.CO': '🇨🇴 Colombia',
   'country.DE': '🇩🇪 Alemania',
+  'country.EC': '🇪🇨 Ecuador',
   'country.ES': '🇪🇸 España',
   'country.FR': '🇫🇷 Francia',
   'country.GB': '🇬🇧 Reino Unido',
@@ -331,6 +339,12 @@ const es = {
   'field.pe_serie': 'Serie (F/B)',
   'field.pe_codigo_hash': 'Código hash',
   'country.PE': '🇵🇪 Perú',
+  // Capa Ecuador
+  'countryGroup.EC': 'Campos de Ecuador 🇪🇨',
+  'field.ec_clave_acceso': 'Clave de acceso (49 dígitos)',
+  'field.ec_numero_autorizacion': 'Número de autorización SRI',
+  'field.ec_ambiente': 'Ambiente (Prod/Pruebas)',
+  'field.ec_tipo_emision': 'Tipo de emisión',
 
   // Wizard / sidebar
   'brand.name': 'Lector de Facturas',
