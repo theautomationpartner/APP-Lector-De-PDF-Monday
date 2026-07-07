@@ -20,6 +20,8 @@ export const config = {
   appEnv: process.env.APP_ENV || 'production', // 'staging' gatea alertas externas
   appBaseUrl: process.env.APP_BASE_URL || '',
   model: process.env.MODEL || 'claude-haiku-4-5',
+  // Tope de facturas por cuenta/mes (0 = sin límite). Base del futuro freemium.
+  freeMonthlyLimit: Number(process.env.FREE_MONTHLY_LIMIT) || 0,
 
   // ── Secretos (solo se leen acá) ──
   databaseUrl: readEnv('DATABASE_URL', { secret: true }),

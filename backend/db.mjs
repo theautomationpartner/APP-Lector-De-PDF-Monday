@@ -13,9 +13,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // coincide con el host de conexión — es lo esperado/recomendado por DO). Sin el
 // cert (dev/local), rejectUnauthorized:false para no frenar el desarrollo.
 const caCertPath = join(__dirname, 'certs', 'do-pg-ca.crt')
+// En producción con DB configurada, el cert es OBLIGATORIO: sin él NO caemos en
+// silencio a "sin verificación" (MITM posible) — preferimos no arrancar.
+if (!existsSync(caCertPath) && config.databaseUrl && config.appEnv === 'production') {
+  throw new Error('[db] falta certs/do-pg-ca.crt en producción — no conecto sin verificar TLS')
+}
 const ssl = existsSync(caCertPath)
   ? { ca: readFileSync(caCertPath, 'utf8'), rejectUnauthorized: true, checkServerIdentity: () => undefined }
-  : { rejectUnauthorized: false }
+  : { rejectUnauthorized: false } // solo dev/local sin cert
 
 const pool = new Pool({
   connectionString: config.databaseUrl,
@@ -103,6 +108,21 @@ export async function recordInvoiceKey(accountId, boardId, key, itemId) {
      on conflict (account_id, board_id, dedup_key) do nothing`,
     [accountId, boardId, key, itemId ? String(itemId) : null],
   )
+}
+
+// Reclama la llave ATÓMICAMENTE (insert-first). Evita la carrera de dos triggers
+// simultáneos con la misma factura: solo uno logra insertar; el otro recibe al
+// dueño existente. { claimed: true } | { claimed: false, existing: {item_id, created_at} }
+export async function claimInvoiceKey(accountId, boardId, key, itemId) {
+  const { rows } = await pool.query(
+    `insert into invoice_keys (account_id, board_id, dedup_key, item_id)
+       values ($1, $2, $3, $4)
+     on conflict (account_id, board_id, dedup_key) do nothing
+     returning item_id`,
+    [accountId, boardId, key, itemId ? String(itemId) : null],
+  )
+  if (rows.length) return { claimed: true }
+  return { claimed: false, existing: await findInvoiceKey(accountId, boardId, key) }
 }
 
 // ── Histórico de lecturas ──
