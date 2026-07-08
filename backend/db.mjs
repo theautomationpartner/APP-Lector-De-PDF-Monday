@@ -4,6 +4,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { config } from './config.mjs'
+import { planLimit, planLabel } from './plans.mjs'
 
 const { Pool } = pg
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -140,8 +141,27 @@ export async function logExtraction(row = {}) {
   )
 }
 
+// ── Plan de la cuenta ──
+// Lee installations.plan (default de config si no hay fila). Devuelve el id.
+export async function getAccountPlan(accountId) {
+  const { rows } = await pool.query(
+    `select plan from installations where account_id = $1`, [String(accountId)],
+  )
+  return rows[0]?.plan || config.defaultPlan
+}
+
+// Setea el plan de una cuenta (upsert). Se usa para grants manuales (ej. tu cuenta
+// = enterprise) y, a futuro, desde el webhook de suscripción de Monday.
+export async function setAccountPlan(accountId, plan) {
+  await pool.query(
+    `insert into installations (account_id, plan, updated_at) values ($1, $2, now())
+     on conflict (account_id) do update set plan = $2, updated_at = now()`,
+    [String(accountId), plan],
+  )
+}
+
 // ── Uso: cuántas facturas leyó la cuenta (para mostrarle el contador al usuario) ──
-// Solo lecturas exitosas (status='ok'). Por cuenta (unidad de facturación futura).
+// Solo lecturas exitosas (status='ok'). Incluye el plan y su límite mensual.
 export async function getUsage(accountId) {
   const { rows } = await pool.query(
     `select
@@ -151,7 +171,12 @@ export async function getUsage(accountId) {
     [String(accountId)],
   )
   const r = rows[0] || {}
-  return { total: Number(r.total || 0), month: Number(r.month || 0) }
+  const plan = await getAccountPlan(accountId)
+  return {
+    total: Number(r.total || 0),
+    month: Number(r.month || 0),
+    plan, planLabel: planLabel(plan), limit: planLimit(plan), // limit null = ilimitado
+  }
 }
 
 // ── Borrado de datos de la cuenta (GDPR / desinstalación) ──

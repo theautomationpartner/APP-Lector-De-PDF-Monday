@@ -173,7 +173,7 @@ export default function App() {
   // Traer el contador de facturas leídas (para mostrarlo en la barra lateral).
   useEffect(() => {
     if (!ready) return
-    if (previewMode) { setUsage({ month: 3, total: 27 }); return }
+    if (previewMode) { setUsage({ month: 3, total: 27, plan: 'pro', planLabel: 'Pro', limit: 200 }); return }
     let cancelled = false
     ;(async () => {
       try {
@@ -330,7 +330,12 @@ export default function App() {
           {usage && (
             <div className="sb-usage">
               <span className="sb-usage-label">{t('usage.label')}</span>
-              <span className="sb-usage-val">{t('usage.value', { month: usage.month, total: usage.total })}</span>
+              <span className="sb-usage-val">
+                {usage.limit != null
+                  ? t('usage.valueLimited', { month: usage.month, limit: usage.limit })
+                  : t('usage.value', { month: usage.month, total: usage.total })}
+              </span>
+              {usage.planLabel && <span className="sb-usage-plan">{t('usage.plan', { plan: usage.planLabel })}</span>}
             </div>
           )}
           <div className="lang-switch">

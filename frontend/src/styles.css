@@ -360,3 +360,6 @@ textarea.gd-input { resize: vertical; min-height: 88px; font-family: var(--font-
 }
 .sb-usage-label { font: 600 10px var(--font-ui); text-transform: uppercase; letter-spacing: .05em; color: var(--ink-500); }
 .sb-usage-val { font: 600 13px var(--font-ui); color: var(--ink-900); }
+.sb-usage-plan { align-self: flex-start; margin-top: 3px; padding: 1px 8px; border-radius: 999px;
+  font: 700 9px var(--font-ui); text-transform: uppercase; letter-spacing: .05em;
+  color: var(--brand-navy); background: var(--brand-yellow); }

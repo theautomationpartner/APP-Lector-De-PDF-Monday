@@ -171,11 +171,11 @@ app.post('/monday/extract', async (req, res) => {
     lang = cfg?.ui_language || 'en'
     const labels = lifecycleLabels(lang)
 
-    // 2.5) Tope mensual por cuenta (si está configurado): frena ANTES de gastar
-    // crédito de IA. FREE_MONTHLY_LIMIT=0 (default) = sin límite.
-    if (config.freeMonthlyLimit > 0) {
-      const u = await getUsage(accountId)
-      if (u.month >= config.freeMonthlyLimit) throw new UserError(t(lang, 'limitReached', { n: config.freeMonthlyLimit }))
+    // 2.5) Tope mensual según el PLAN de la cuenta (Enterprise = ilimitado). Frena
+    // ANTES de gastar crédito de IA. getUsage ya trae el límite del plan.
+    const acctUsage = await getUsage(accountId)
+    if (acctUsage.limit != null && acctUsage.month >= acctUsage.limit) {
+      throw new UserError(t(lang, 'limitReached', { n: acctUsage.limit }))
     }
 
     // 3) Estado → "leyendo".
