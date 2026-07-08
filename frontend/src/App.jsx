@@ -374,9 +374,9 @@ export default function App() {
         </header>
 
         {previewMode && <div className="preview-banner">{t('preview.banner')}</div>}
-        {!context && !previewMode && <p className="muted">{t('state.connecting')}</p>}
+        {!context && !previewMode && <div className="gd-loading"><span className="gd-loading-spin" />{t('state.connecting')}</div>}
         {context && !boardId && !previewMode && <p className="muted">{t('state.noBoard')}</p>}
-        {!previewMode && boardId && loading && <p className="muted">{t('state.loadingColumns')}</p>}
+        {!previewMode && boardId && loading && <div className="gd-loading"><span className="gd-loading-spin" />{t('state.loadingColumns')}</div>}
         {error && <p className="error">⚠️ {error}</p>}
 
         {ready && (
