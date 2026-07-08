@@ -254,9 +254,11 @@ export default function App() {
     <div className="field"><span className="field-label">{t(`field.${id}`)}</span>{mapSel(id)}</div>
   )
 
-  // ─── Splash neutro: mientras conecta con monday, SIN texto (evita el flash de
-  // idioma equivocado que el reviewer no debe ver). ───
-  if (!context && !previewMode) {
+  // ─── Splash a pantalla completa: mientras conecta con monday O carga las
+  // columnas del tablero. Mostramos SOLO el spinner centrado (sin el chrome del
+  // wizard a medio armar). Sin texto: evita el flash de idioma equivocado. ───
+  const booting = !previewMode && !error && (!context || (boardId && loading))
+  if (booting) {
     return (
       <div className="splash">
         <div className="splash-logo">IR</div>
@@ -374,9 +376,7 @@ export default function App() {
         </header>
 
         {previewMode && <div className="preview-banner">{t('preview.banner')}</div>}
-        {!context && !previewMode && <div className="gd-loading"><span className="gd-loading-spin" />{t('state.connecting')}</div>}
         {context && !boardId && !previewMode && <p className="muted">{t('state.noBoard')}</p>}
-        {!previewMode && boardId && loading && <div className="gd-loading"><span className="gd-loading-spin" />{t('state.loadingColumns')}</div>}
         {error && <p className="error">⚠️ {error}</p>}
 
         {ready && (
