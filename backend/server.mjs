@@ -16,10 +16,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 app.use(express.json({ limit: '2mb' }))
 
-// Headers de seguridad: solo monday puede iframear la app (anti-clickjacking).
-app.use((_req, res, next) => {
-  res.setHeader('Content-Security-Policy', 'frame-ancestors https://*.monday.com https://monday.com')
+// Headers de seguridad. El board view corre DENTRO de monday → solo monday puede
+// enmarcarlo (anti-clickjacking). Pero las páginas públicas (onboarding/privacy/
+// terms) tienen que poder enmarcarse en cualquier lado — monday testea el "How to
+// use" con iframetester.com — así que a ésas NO les ponemos la restricción.
+const PUBLIC_PAGES = new Set(['/onboarding', '/privacy', '/terms'])
+app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff')
+  if (!PUBLIC_PAGES.has(req.path)) {
+    res.setHeader('Content-Security-Policy', 'frame-ancestors https://*.monday.com https://monday.com')
+  }
   next()
 })
 
