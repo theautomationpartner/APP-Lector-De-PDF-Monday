@@ -260,7 +260,9 @@ app.post('/monday/extract', async (req, res) => {
         if (statusColId) await setStatus(shortLivedToken, boardId, itemId, statusColId, labels.duplicate)
         const date = owner.created_at instanceof Date ? owner.created_at.toISOString().slice(0, 10) : ''
         await postComment(shortLivedToken, itemId, t(lang, 'duplicate', { itemId: owner.item_id, date }))
-        await logExtraction({ accountId, boardId, itemId, detectedCountry: data.detected_country, model, status: 'duplicate' })
+        // La IA ya se ejecutó antes del chequeo de duplicado → el gasto es real
+        // (y es culpa del usuario, que re-subió la misma factura). Se registra.
+        await logExtraction({ accountId, boardId, itemId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'duplicate' })
         console.log(`[extract] DUPLICADA item=${itemId} key=${dedupKey} vs item=${owner.item_id}`)
         return res.status(200).json({ ok: true, duplicate: true })
       }

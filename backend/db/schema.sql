@@ -82,3 +82,8 @@ CREATE TABLE IF NOT EXISTS invoice_keys (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (account_id, board_id, dedup_key)
 );
+
+-- Mapeo a los tableros internos de ops (Board 1 instalaciones + Board 2 lecturas):
+-- board_item_id = el item que representa esta fila en Monday, para actualizarlo.
+ALTER TABLE installations ADD COLUMN IF NOT EXISTS board_item_id BIGINT;
+ALTER TABLE extractions   ADD COLUMN IF NOT EXISTS board_item_id BIGINT;
