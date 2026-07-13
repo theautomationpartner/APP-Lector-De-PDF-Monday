@@ -5,7 +5,6 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "extract": "node extract.mjs",
     "copy-frontend": "node -e \"const fs=require('fs'),path=require('path');const src=path.join(process.cwd(),'..','frontend','dist'),dst=path.join(process.cwd(),'public');if(fs.existsSync(dst))fs.rmSync(dst,{recursive:true,force:true});if(fs.existsSync(src)){fs.cpSync(src,dst,{recursive:true});console.log('Frontend copiado a public/')}else{console.log('No hay dist/, corré npm run build en frontend primero')}\""
   },
   "dependencies": {

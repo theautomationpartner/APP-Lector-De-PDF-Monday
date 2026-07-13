@@ -126,6 +126,18 @@ export async function claimInvoiceKey(accountId, boardId, key, itemId) {
   return { claimed: false, existing: await findInvoiceKey(accountId, boardId, key) }
 }
 
+// Libera una llave reclamada por ESTE item. Se usa cuando la carga falla DESPUÉS
+// de reclamar: si no, la factura quedaría "reservada" por un ítem que nunca la
+// cargó y otro ítem legítimo sería marcado duplicado. Solo borra si el dueño es
+// el mismo item (no toca claims ajenos).
+export async function releaseInvoiceKey(accountId, boardId, key, itemId) {
+  await pool.query(
+    `delete from invoice_keys
+      where account_id = $1 and board_id = $2 and dedup_key = $3 and item_id = $4`,
+    [accountId, boardId, key, String(itemId)],
+  )
+}
+
 // ── Histórico de lecturas ──
 export async function logExtraction(row = {}) {
   const {

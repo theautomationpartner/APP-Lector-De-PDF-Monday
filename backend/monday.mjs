@@ -9,7 +9,7 @@ export async function gql(token, query, variables = {}) {
     headers: {
       'Content-Type': 'application/json',
       Authorization: token,
-      'API-Version': '2024-01',
+      'API-Version': '2025-04', // 2024-01 quedó deprecada; nuestras queries son compatibles (verificado contra la guía de migración)
     },
     body: JSON.stringify({ query, variables }),
   })

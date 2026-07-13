@@ -9,7 +9,7 @@ import {
   getBoardIdFromItem, getLatestFileUrl, getColumnTypes,
   buildColumnValues, writeColumns, postComment, setStatus, getStatusColumnId,
 } from './monday.mjs'
-import { runStartupMigrations, getBoardConfig, saveBoardConfig, logExtraction, claimInvoiceKey, deleteAccountData, getUsage, setAccountPlan } from './db.mjs'
+import { runStartupMigrations, getBoardConfig, saveBoardConfig, logExtraction, claimInvoiceKey, releaseInvoiceKey, deleteAccountData, getUsage, setAccountPlan } from './db.mjs'
 import { planFromSubscription } from './plans.mjs'
 import { t, lifecycleLabels } from './i18n.mjs'
 
@@ -31,6 +31,9 @@ app.use((err, req, res, next) => {
 // use" con iframetester.com — así que a ésas NO les ponemos la restricción.
 const PUBLIC_PAGES = new Set(['/onboarding', '/privacy', '/terms'])
 app.use((req, res, next) => {
+  // HSTS: requisito de la review de monday (min 1 año). El TLS lo terminan
+  // Cloudflare/nginx; el header viaja igual hasta el navegador.
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
   res.setHeader('X-Content-Type-Options', 'nosniff')
   if (!PUBLIC_PAGES.has(req.path)) {
     res.setHeader('Content-Security-Policy', 'frame-ancestors https://*.monday.com https://monday.com')
@@ -179,6 +182,7 @@ app.get('/api/usage', async (req, res) => {
 // ───────────────────────────────────────────────────────────────────────────
 app.post('/monday/extract', async (req, res) => {
   let shortLivedToken, accountId, boardId, itemId, statusColId, lang = 'en'
+  let claimedKey = null // llave de dedup reclamada por ESTA corrida (para liberarla si falla)
   try {
     // 1) Auth: JWT firmado con el Signing Secret de la app.
     const auth = req.headers.authorization
@@ -249,6 +253,7 @@ app.post('/monday/extract', async (req, res) => {
     const keyComplete = !!(normId(data.supplier_tax_id) && normId(data.invoice_number))
     if (keyComplete) {
       const claim = await claimInvoiceKey(accountId, boardId, dedupKey, itemId)
+      if (claim.claimed) claimedKey = dedupKey // si algo falla después, se libera en el catch
       const owner = claim.claimed ? null : claim.existing
       // Otro ítem con la misma factura = duplicado. El MISMO ítem (re-disparo) NO.
       if (cfg?.dedup_enabled && owner && String(owner.item_id) !== String(itemId)) {
@@ -284,6 +289,9 @@ app.post('/monday/extract', async (req, res) => {
     res.status(200).json({ ok: true, written: Object.keys(cv).length, usage })
   } catch (e) {
     console.error('[extract] error:', e.message)
+    // Si ESTA corrida reclamó la llave de dedup y después falló, la liberamos:
+    // la factura no quedó cargada, no debe quedar "reservada" como duplicado.
+    if (claimedKey) await releaseInvoiceKey(accountId, boardId, claimedKey, itemId).catch(() => {})
     // Al usuario solo le mostramos errores "esperables" (UserError, ya traducidos);
     // los internos (DB, APIs) van al log y al board le llega un mensaje genérico.
     const userMsg = e instanceof UserError ? e.message : t(lang, 'internalError')
