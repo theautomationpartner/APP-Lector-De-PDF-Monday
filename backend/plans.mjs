@@ -22,3 +22,13 @@ export function planLimit(planId, fallback = 'free') {
 export function planLabel(planId, fallback = 'free') {
   return (PLANS[planId] || PLANS[fallback] || PLANS.free).label
 }
+
+// Mapea el objeto `subscription` de monday a un id de plan nuestro. `plan_id` lo
+// definimos NOSOTROS al crear los planes en el Dev Center, asi que tienen que
+// coincidir con las claves de PLANS (free/starter/pro/business/enterprise).
+// Devuelve el id valido, o null si no hay subscription o el plan_id no se reconoce.
+export function planFromSubscription(sub) {
+  if (!sub || typeof sub !== 'object' || !sub.plan_id) return null
+  const id = String(sub.plan_id).trim().toLowerCase()
+  return PLANS[id] ? id : null
+}

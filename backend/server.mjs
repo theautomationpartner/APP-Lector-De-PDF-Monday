@@ -9,12 +9,21 @@ import {
   getBoardIdFromItem, getLatestFileUrl, getColumnTypes,
   buildColumnValues, writeColumns, postComment, setStatus, getStatusColumnId,
 } from './monday.mjs'
-import { runStartupMigrations, getBoardConfig, saveBoardConfig, logExtraction, claimInvoiceKey, deleteAccountData, getUsage } from './db.mjs'
+import { runStartupMigrations, getBoardConfig, saveBoardConfig, logExtraction, claimInvoiceKey, deleteAccountData, getUsage, setAccountPlan } from './db.mjs'
+import { planFromSubscription } from './plans.mjs'
 import { t, lifecycleLabels } from './i18n.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 app.use(express.json({ limit: '2mb' }))
+
+// Body malformado (JSON basura de bots/escaneres que sondean el dominio) o
+// demasiado grande -> respuesta limpia, sin volcar el stack al log.
+app.use((err, req, res, next) => {
+  if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: 'invalid JSON body' })
+  if (err?.type === 'entity.too.large') return res.status(413).json({ error: 'payload too large' })
+  return next(err)
+})
 
 // Headers de seguridad. El board view corre DENTRO de monday → solo monday puede
 // enmarcarlo (anti-clickjacking). Pero las páginas públicas (onboarding/privacy/
@@ -75,7 +84,22 @@ function authSession(req) {
   } catch { throw new AuthError('invalid session token') }
   const accountId = claims?.dat?.account_id ?? claims?.accountId
   if (!accountId) throw new AuthError('invalid session token')
-  return { accountId: String(accountId) }
+  return { accountId: String(accountId), claims }
+}
+
+// Sincroniza el plan de la cuenta desde la `subscription` del JWT de monday (si la
+// app esta monetizada, monday incluye { subscription: { plan_id, is_trial, ... } }
+// tanto en el session token como en el JWT de la receta). SOLO escribe cuando hay
+// una subscription valida -> preserva overrides manuales (ej. cuentas de dev en
+// enterprise) cuando la cuenta no tiene subscription. Best-effort, no rompe el req.
+async function syncPlanFromClaims(accountId, claims) {
+  try {
+    const sub = claims?.subscription || claims?.dat?.subscription
+    if (!sub || !sub.plan_id) return
+    const plan = planFromSubscription(sub)
+    if (plan) { await setAccountPlan(accountId, plan); return }
+    console.warn(`[plan] subscription con plan_id no reconocido: "${sub.plan_id}" (cuenta ${accountId})`)
+  } catch (e) { console.warn('[plan] no se pudo sincronizar desde el JWT:', e.message) }
 }
 
 // 401 solo para fallas de auth; el resto es 500 con mensaje genérico (el detalle
@@ -110,7 +134,8 @@ function sanitizeConfigBody(body = {}) {
 
 app.get('/api/config/:boardId', async (req, res) => {
   try {
-    const { accountId } = authSession(req)
+    const { accountId, claims } = authSession(req)
+    await syncPlanFromClaims(accountId, claims) // al abrir la app, refresca el plan
     const cfg = await getBoardConfig(accountId, req.params.boardId)
     const countries = cfg?.countries?.length ? cfg.countries : (cfg?.country_override ? [cfg.country_override] : [])
     const currencies = cfg?.currencies?.length ? cfg.currencies : (cfg?.currency_override ? [cfg.currency_override] : [])
@@ -141,7 +166,8 @@ app.post('/api/config/:boardId', async (req, res) => {
 // Solo el CONTEO — el costo/consumo es interno (ver scripts/usage-report.mjs).
 app.get('/api/usage', async (req, res) => {
   try {
-    const { accountId } = authSession(req)
+    const { accountId, claims } = authSession(req)
+    await syncPlanFromClaims(accountId, claims)
     res.json(await getUsage(accountId))
   } catch (e) {
     sendApiError(res, e)
@@ -177,8 +203,10 @@ app.post('/monday/extract', async (req, res) => {
     lang = cfg?.ui_language || 'en'
     const labels = lifecycleLabels(lang)
 
-    // 2.5) Tope mensual según el PLAN de la cuenta (Enterprise = ilimitado). Frena
-    // ANTES de gastar crédito de IA. getUsage ya trae el límite del plan.
+    // 2.5) Plan de la cuenta desde la subscription del JWT de la receta (si la app
+    // esta monetizada) + tope mensual segun ese plan (Enterprise = ilimitado). Frena
+    // ANTES de gastar credito de IA. getUsage ya trae el limite del plan.
+    await syncPlanFromClaims(accountId, claims)
     const acctUsage = await getUsage(accountId)
     if (acctUsage.limit != null && acctUsage.month >= acctUsage.limit) {
       throw new UserError(t(lang, 'limitReached', { n: acctUsage.limit }))
@@ -292,6 +320,20 @@ app.post('/api/webhooks/monday-lifecycle', async (req, res) => {
     if (type === 'uninstall' && accountId) {
       const stats = await deleteAccountData(accountId)
       console.log(`[lifecycle] datos borrados account=${accountId}:`, stats)
+    } else if (type.startsWith('app_subscription_') && accountId) {
+      // Monetizacion: el cliente creo / cambio / renovo / cancelo su plan.
+      if (type === 'app_subscription_cancelled') {
+        await setAccountPlan(accountId, 'free') // al cancelar, vuelve al free tier
+        console.log(`[lifecycle] suscripcion cancelada -> free account=${accountId}`)
+      } else {
+        const plan = planFromSubscription(data.subscription)
+        if (plan) {
+          await setAccountPlan(accountId, plan)
+          console.log(`[lifecycle] plan=${plan} account=${accountId}`)
+        } else {
+          console.warn(`[lifecycle] subscription sin plan_id reconocido:`, data.subscription?.plan_id)
+        }
+      }
     }
   } catch (err) {
     console.error('[lifecycle] error:', err.message)
