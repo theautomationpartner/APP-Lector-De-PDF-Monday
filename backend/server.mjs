@@ -11,6 +11,7 @@ import {
 } from './monday.mjs'
 import { runStartupMigrations, getBoardConfig, saveBoardConfig, logExtraction, claimInvoiceKey, releaseInvoiceKey, deleteAccountData, getUsage, setAccountPlan } from './db.mjs'
 import { planFromSubscription } from './plans.mjs'
+import { syncReading, syncInstallation } from './internal-board.mjs'
 import { t, lifecycleLabels } from './i18n.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -262,7 +263,8 @@ app.post('/monday/extract', async (req, res) => {
         await postComment(shortLivedToken, itemId, t(lang, 'duplicate', { itemId: owner.item_id, date }))
         // La IA ya se ejecutó antes del chequeo de duplicado → el gasto es real
         // (y es culpa del usuario, que re-subió la misma factura). Se registra.
-        await logExtraction({ accountId, boardId, itemId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'duplicate' })
+        const dupId = await logExtraction({ accountId, boardId, itemId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'duplicate' })
+        void syncReading({ extractionId: dupId, accountId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'duplicate' })
         console.log(`[extract] DUPLICADA item=${itemId} key=${dedupKey} vs item=${owner.item_id}`)
         return res.status(200).json({ ok: true, duplicate: true })
       }
@@ -280,12 +282,13 @@ app.post('/monday/extract', async (req, res) => {
       .map(([f]) => `• ${f}: ${data[f]}`)
     await postComment(shortLivedToken, itemId, t(lang, 'loaded', { model, n: Object.keys(cv).length }) + '\n' + loaded.join('\n'))
 
-    // 8) Histórico.
-    await logExtraction({
+    // 8) Histórico + tablero interno de ops (fire-and-forget, no frena la respuesta).
+    const extractionId = await logExtraction({
       accountId, boardId, itemId, detectedCountry: data.detected_country, model,
       inputTokens: usage.input_tokens, outputTokens: usage.output_tokens,
       fieldsWritten: Object.keys(cv).length, status: 'ok',
     })
+    void syncReading({ extractionId, accountId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ok' })
 
     console.log(`[extract] OK item=${itemId} cols=${Object.keys(cv).length} country=${data.detected_country} tokens=${usage.input_tokens}/${usage.output_tokens}`)
     res.status(200).json({ ok: true, written: Object.keys(cv).length, usage })
@@ -304,7 +307,8 @@ app.post('/monday/extract', async (req, res) => {
         await postComment(shortLivedToken, itemId, t(lang, 'failed', { msg: userMsg }))
       }
       if (accountId && boardId) {
-        await logExtraction({ accountId, boardId, itemId, status: 'error', error: e.message })
+        const errId = await logExtraction({ accountId, boardId, itemId, status: 'error', error: e.message })
+        void syncReading({ extractionId: errId, accountId, status: 'error', error: e.message })
       }
     } catch { /* noop */ }
     res.status(200).json({ ok: false, error: userMsg })
@@ -327,18 +331,26 @@ app.post('/api/webhooks/monday-lifecycle', async (req, res) => {
     const { type = '', data = {} } = req.body || {}
     const accountId = String(data.account_id ?? '')
     console.log(`[lifecycle] evento=${type} account=${accountId}`)
-    if (type === 'uninstall' && accountId) {
+    if (type === 'install' && accountId) {
+      // Alta en el tablero interno de instalaciones (best-effort).
+      void syncInstallation(accountId, { estado: 'Activa' })
+    } else if (type === 'uninstall' && accountId) {
+      // Marcar Desinstalada en el tablero ANTES de borrar (el borrado se lleva el
+      // mapeo board_item_id). La fila del tablero queda como histórico de churn.
+      await syncInstallation(accountId, { estado: 'Desinstalada' })
       const stats = await deleteAccountData(accountId)
       console.log(`[lifecycle] datos borrados account=${accountId}:`, stats)
     } else if (type.startsWith('app_subscription_') && accountId) {
       // Monetizacion: el cliente creo / cambio / renovo / cancelo su plan.
       if (type === 'app_subscription_cancelled') {
         await setAccountPlan(accountId, 'free') // al cancelar, vuelve al free tier
+        void syncInstallation(accountId, { plan: 'free' })
         console.log(`[lifecycle] suscripcion cancelada -> free account=${accountId}`)
       } else {
         const plan = planFromSubscription(data.subscription)
         if (plan) {
           await setAccountPlan(accountId, plan)
+          void syncInstallation(accountId, { plan })
           console.log(`[lifecycle] plan=${plan} account=${accountId}`)
         } else {
           console.warn(`[lifecycle] subscription sin plan_id reconocido:`, data.subscription?.plan_id)

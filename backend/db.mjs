@@ -144,13 +144,15 @@ export async function logExtraction(row = {}) {
     accountId, boardId, itemId, detectedCountry, model,
     inputTokens, outputTokens, fieldsWritten, status, error,
   } = row
-  await pool.query(
+  const { rows } = await pool.query(
     `insert into extractions
        (account_id, board_id, item_id, detected_country, model, input_tokens, output_tokens, fields_written, status, error)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+     returning id`,
     [accountId, boardId, itemId || null, detectedCountry || null, model || null,
       inputTokens || null, outputTokens || null, fieldsWritten || null, status, error || null],
   )
+  return rows[0]?.id ?? null
 }
 
 // ── Plan de la cuenta ──

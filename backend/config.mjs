@@ -30,6 +30,9 @@ export const config = {
   mondaySigningSecret: readEnv('MONDAY_SIGNING_SECRET', { secret: true }), // JWT de recetas
   mondayClientSecret: readEnv('MONDAY_CLIENT_SECRET', { secret: true }),   // session token de la vista
   mondayClientId: process.env.MONDAY_CLIENT_ID || '', // público (domain ownership)
+  // Token de NUESTRA cuenta de monday, para los tableros internos de ops
+  // (instalaciones + facturas leídas). Opcional: sin él, el sync queda apagado.
+  mondayInternalToken: process.env.MONDAY_INTERNAL_TOKEN || '',
 }
 
 export const isStaging = config.appEnv === 'staging'
