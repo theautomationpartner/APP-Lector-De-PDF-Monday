@@ -34,6 +34,7 @@ const DEFAULT_CONFIG = {
   fileColumnId: '',        // vacío = auto-detectar la columna de archivo
   countries: [],           // vacío = solo campos universales
   dedupEnabled: false,
+  lineItemsEnabled: false, // renglones de la factura como subítems
 }
 
 export default function App() {
@@ -50,6 +51,7 @@ export default function App() {
   const [fileColumnId, setFileColumnId] = useState('')
   const [countries, setCountries] = useState([])
   const [dedupEnabled, setDedupEnabled] = useState(false)
+  const [lineItemsEnabled, setLineItemsEnabled] = useState(false)
 
   const [saveState, setSaveState] = useState('idle') // idle | saving | saved | error
   const [dirty, setDirty] = useState(false)
@@ -126,6 +128,7 @@ export default function App() {
       setFileColumnId(cfg.fileColumnId || '')
       setCountries(cfg.countries || [])
       setDedupEnabled(!!cfg.dedupEnabled)
+      setLineItemsEnabled(!!cfg.lineItemsEnabled)
       setDirty(false)
     }
     ;(async () => {
@@ -200,7 +203,7 @@ export default function App() {
 
   const collectConfig = () => ({
     language, mapping, fileColumnId, countries,
-    dedupEnabled,
+    dedupEnabled, lineItemsEnabled,
   })
 
   const saveConfig = async () => {
@@ -227,7 +230,7 @@ export default function App() {
   // ─── Estado de los pasos (solo el mapeo es requerido; el resto opcional) ───
   const done1 = countries.length > 0
   const done2 = mappedCount > 0
-  const rulesTouched = dedupEnabled
+  const rulesTouched = dedupEnabled || lineItemsEnabled
   const completed = [done1, done2, rulesTouched].filter(Boolean).length
   const steps = [
     { n: 1, label: t('step1.label'), mark: done1 ? 'complete' : '', status: 'optional', statusText: t('status.optional') },
@@ -502,6 +505,22 @@ export default function App() {
                       <div className="gd-toggle-text">
                         <div className="gd-toggle-label">{dedupEnabled ? t('rules.dedup.onLabel') : t('rules.dedup.offLabel')}</div>
                         <div className="gd-toggle-help">{t('rules.dedup.help')}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="gd-card" style={{ marginTop: 18 }}>
+                    <div className="gd-card-head"><span className="gd-card-title">{t('rules.lineitems.title')}</span></div>
+                    <div className="gd-toggle-row">
+                      <button
+                        type="button"
+                        className={`gd-switch ${lineItemsEnabled ? 'on' : ''}`}
+                        aria-pressed={lineItemsEnabled}
+                        onClick={() => { setLineItemsEnabled((v) => !v); touch() }}
+                      />
+                      <div className="gd-toggle-text">
+                        <div className="gd-toggle-label">{lineItemsEnabled ? t('rules.lineitems.onLabel') : t('rules.lineitems.offLabel')}</div>
+                        <div className="gd-toggle-help">{t('rules.lineitems.help')}</div>
                       </div>
                     </div>
                   </div>

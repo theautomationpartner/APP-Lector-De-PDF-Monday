@@ -163,3 +163,68 @@ export async function setStatus(token, boardId, itemId, columnId, label) {
   }`
   await gql(token, m, { b: String(boardId), i: String(itemId), c: String(columnId), v: String(label) })
 }
+
+// ─── Renglones → subítems ────────────────────────────────────────────────────
+// Crea un subítem por renglón de la factura: el NOMBRE es la descripción y las
+// columnas Cantidad / Precio unitario / Total van en el tablero de subítems
+// (se crean por título si faltan, según el idioma del tablero).
+const SUBITEM_COL_TITLES = {
+  en: { qty: 'Qty', unit: 'Unit price', total: 'Total' },
+  es: { qty: 'Cantidad', unit: 'Precio unitario', total: 'Total' },
+}
+
+// Busca (o crea) las columnas numéricas del tablero de subítems. Devuelve
+// { qty, unit, total } con los column ids.
+async function ensureSubitemCols(token, subBoardId, lang) {
+  const titles = SUBITEM_COL_TITLES[lang] || SUBITEM_COL_TITLES.en
+  const d = await gql(token, `query { boards(ids: [${Number(subBoardId)}]) { columns { id title type } } }`)
+  const existing = d?.boards?.[0]?.columns || []
+  const ids = {}
+  for (const key of ['qty', 'unit', 'total']) {
+    const found = existing.find((c) => c.title.toLowerCase() === titles[key].toLowerCase())
+    if (found) { ids[key] = found.id; continue }
+    const r = await gql(token,
+      `mutation ($b: ID!, $t: String!) { create_column(board_id: $b, title: $t, column_type: numbers) { id } }`,
+      { b: String(subBoardId), t: titles[key] })
+    ids[key] = r.create_column.id
+  }
+  return ids
+}
+
+// Crea los subítems del item. IDEMPOTENTE: si el item ya tiene subítems (un
+// re-disparo de la receta), no crea nada (evita duplicar renglones).
+// Devuelve { created, skipped }.
+export async function writeLineItemSubitems(token, itemId, lines, lang = 'en') {
+  const items = (Array.isArray(lines) ? lines : []).filter((l) => (l?.description || '').trim()).slice(0, 50)
+  if (!items.length) return { created: 0, skipped: false }
+  const pre = await gql(token, `query { items(ids: [${Number(itemId)}]) { subitems { id } } }`)
+  if ((pre?.items?.[0]?.subitems || []).length) return { created: 0, skipped: true }
+
+  let subBoardId = null, cols = null, created = 0
+  for (const ln of items) {
+    // create_subitem crea la columna "Subitems" en el tablero padre si no existe;
+    // la respuesta trae el board del subítem (recién ahí conocemos su id).
+    const r = await gql(token,
+      `mutation ($p: ID!, $n: String!) { create_subitem(parent_item_id: $p, item_name: $n) { id board { id } } }`,
+      { p: String(itemId), n: String(ln.description).trim().slice(0, 255) })
+    const subId = r?.create_subitem?.id
+    if (!subId) continue
+    if (!subBoardId) {
+      subBoardId = r.create_subitem.board?.id
+      if (subBoardId) cols = await ensureSubitemCols(token, subBoardId, lang)
+    }
+    if (cols) {
+      const cv = {}
+      const q = toNumber(ln.quantity);   if (q != null) cv[cols.qty] = String(q)
+      const u = toNumber(ln.unit_price); if (u != null) cv[cols.unit] = String(u)
+      const t = toNumber(ln.total);      if (t != null) cv[cols.total] = String(t)
+      if (Object.keys(cv).length) {
+        await gql(token,
+          `mutation ($b: ID!, $i: ID!, $cv: JSON!) { change_multiple_column_values(board_id: $b, item_id: $i, column_values: $cv) { id } }`,
+          { b: String(subBoardId), i: String(subId), cv: JSON.stringify(cv) })
+      }
+    }
+    created++
+  }
+  return { created, skipped: false }
+}

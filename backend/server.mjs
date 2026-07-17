@@ -8,6 +8,7 @@ import { extractInvoice } from './extractor.mjs'
 import {
   getBoardIdFromItem, getLatestFileUrl, getColumnTypes,
   buildColumnValues, writeColumns, postComment, setStatus, getStatusColumnId,
+  writeLineItemSubitems,
 } from './monday.mjs'
 import { runStartupMigrations, getBoardConfig, saveBoardConfig, logExtraction, claimInvoiceKey, releaseInvoiceKey, deleteAccountData, getUsage, setAccountPlan } from './db.mjs'
 import { planFromSubscription } from './plans.mjs'
@@ -133,6 +134,7 @@ function sanitizeConfigBody(body = {}) {
     language: ['en', 'es'].includes(body.language) ? body.language : 'en',
     fileColumnId: str(body.fileColumnId),
     dedupEnabled: !!body.dedupEnabled,
+    lineItemsEnabled: !!body.lineItemsEnabled,
   }
 }
 
@@ -150,6 +152,7 @@ app.get('/api/config/:boardId', async (req, res) => {
       fileColumnId: cfg?.file_column_id || '',
       language: cfg?.ui_language || 'en',
       dedupEnabled: cfg?.dedup_enabled ?? false,
+      lineItemsEnabled: cfg?.line_items_enabled ?? false,
     })
   } catch (e) {
     sendApiError(res, e)
@@ -240,7 +243,7 @@ app.post('/monday/extract', async (req, res) => {
       buf.toString('base64'),
       file.mediaType,
       MODEL,
-      { countries: cfg?.countries || [] },
+      { countries: cfg?.countries || [], lineItems: !!cfg?.line_items_enabled },
     )
 
     // 5.5) ANTI-DUPLICADOS (antes de escribir). IDs fiscales normalizados a
@@ -275,11 +278,23 @@ app.post('/monday/extract', async (req, res) => {
     const cv = buildColumnValues(mapping, data, colTypes)
     await writeColumns(shortLivedToken, boardId, itemId, cv)
 
+    // 6.5) Renglones → subítems (si el tablero lo activó). Best-effort: si falla,
+    // las columnas ya quedaron escritas — se loguea y se sigue.
+    let subitemsCreated = 0
+    if (cfg?.line_items_enabled && Array.isArray(data.line_items) && data.line_items.length) {
+      try {
+        const r = await writeLineItemSubitems(shortLivedToken, itemId, data.line_items, lang)
+        subitemsCreated = r.created
+        if (r.skipped) console.log(`[extract] subitems salteados (el item ya tenía) item=${itemId}`)
+      } catch (e) { console.warn('[extract] subitems fallaron:', e.message) }
+    }
+
     // 7) Estado → "leido" + comentario con lo cargado.
     if (statusColId) await setStatus(shortLivedToken, boardId, itemId, statusColId, labels.done)
     const loaded = Object.entries(mapping)
       .filter(([f, c]) => c && (data[f] || '').toString().trim())
       .map(([f]) => `• ${f}: ${data[f]}`)
+    if (subitemsCreated > 0) loaded.push(t(lang, 'subitemsLoaded', { n: subitemsCreated }))
     await postComment(shortLivedToken, itemId, t(lang, 'loaded', { model, n: Object.keys(cv).length }) + '\n' + loaded.join('\n'))
 
     // 8) Histórico + tablero interno de ops (fire-and-forget, no frena la respuesta).

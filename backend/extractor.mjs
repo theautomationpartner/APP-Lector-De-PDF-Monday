@@ -7,26 +7,47 @@ const client = new Anthropic({ apiKey: config.anthropicApiKey })
 
 // Esquema JSON (catálogo + detected_country) para el set de campos dado. Se arma
 // por llamada porque los campos dependen de los países configurados en el tablero.
-function buildSchema(fields) {
+// lineItems: agrega el array de renglones (solo si el tablero activó los subítems
+// — extraerlos cuesta tokens de salida extra, no se paga si nadie lo usa).
+function buildSchema(fields, lineItems = false) {
   const props = Object.fromEntries(fields.map(([id]) => [id, { type: 'string' }]))
   props.detected_country = { type: 'string' }
-  return {
-    type: 'object',
-    properties: props,
-    required: [...fields.map(([id]) => id), 'detected_country'],
-    additionalProperties: false,
+  const required = [...fields.map(([id]) => id), 'detected_country']
+  if (lineItems) {
+    props.line_items = {
+      type: 'array', // sin maxItems: structured outputs no lo soporta (el cap de 50 está al crear los subítems)
+      items: {
+        type: 'object',
+        properties: {
+          description: { type: 'string' },
+          quantity:    { type: 'string' },
+          unit_price:  { type: 'string' },
+          total:       { type: 'string' },
+        },
+        required: ['description', 'quantity', 'unit_price', 'total'],
+        additionalProperties: false,
+      },
+    }
+    required.push('line_items')
   }
+  return { type: 'object', properties: props, required, additionalProperties: false }
 }
 
 // Manda el archivo (PDF o imagen, base64) a Claude y devuelve { data, usage, model }.
 // mediaType: 'application/pdf' | 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'.
 // hints = { country, currency } de la config, para desambiguar fecha/número/moneda.
 export async function extractInvoice(fileBase64, mediaType = 'application/pdf', model = 'claude-haiku-4-5', hints = {}) {
-  const { countries = [] } = hints
+  const { countries = [], lineItems = false } = hints
   // Campos = universales + capas de los países configurados (ej. AR agrega CAE, etc.).
   const fields = fieldsForCountries(countries)
-  const schema = buildSchema(fields)
+  const schema = buildSchema(fields, lineItems)
   const fieldGuide = fields.map(([id, desc]) => `- ${id}: ${desc}`).join('\n')
+  const lineItemsText = lineItems
+    ? '\n\nLINE ITEMS: also return line_items — one entry per row of the invoice detail table, in order: ' +
+      'description (as printed, concise), quantity, unit_price (price per unit) and total (line total), all ' +
+      'as strings following the AMOUNTS rules ("" if that cell is not present). If the invoice has no ' +
+      'itemized rows (e.g. a subscription or single-concept invoice), return [].'
+    : ''
   const hintText = countries.length
     ? `\n\nThis board processes invoices from: ${countries.join(', ')}. Use this as context to resolve ` +
       `ambiguous date formats (US uses MM/DD/YYYY, most countries DD/MM/YYYY), number separators and ` +
@@ -39,7 +60,9 @@ export async function extractInvoice(fileBase64, mediaType = 'application/pdf', 
 
   const res = await client.messages.create({
     model,
-    max_tokens: 2000,
+    // 4000 con renglones (una factura de 30+ renglones no entra en 2000 y
+    // truncaría el JSON). max_tokens es un tope, no se factura lo no usado.
+    max_tokens: lineItems ? 4000 : 2000,
     output_config: { format: { type: 'json_schema', schema } },
     messages: [
       {
@@ -64,7 +87,7 @@ export async function extractInvoice(fileBase64, mediaType = 'application/pdf', 
               'THREE digits is a thousands separator, not a decimal. ' +
               'Currency as a 3-letter ISO 4217 code. ' +
               'Also return detected_country as an ISO 3166-1 alpha-2 code (or "" if unclear).' +
-              hintText + '\n\n' + fieldGuide,
+              hintText + lineItemsText + '\n\n' + fieldGuide,
           },
         ],
       },

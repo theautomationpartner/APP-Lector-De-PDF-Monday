@@ -13,6 +13,7 @@ const dict = {
     fileTooBig: ({ mb }) => `The file is larger than ${mb} MB. Please upload a smaller PDF or image.`,
     internalError: 'temporary internal error — please try again in a few minutes.',
     limitReached: ({ n }) => `This account reached its monthly limit of ${n} invoices. It resets next month.`,
+    subitemsLoaded: ({ n }) => `• ${n} line item(s) loaded as subitems`,
   },
   es: {
     noMapping: 'No hay columnas mapeadas para este tablero (configurá el mapeo en la vista). No se llamó a la IA.',
@@ -25,6 +26,7 @@ const dict = {
     fileTooBig: ({ mb }) => `El archivo pesa más de ${mb} MB. Subí un PDF o imagen más liviano.`,
     internalError: 'error interno temporal — probá de nuevo en unos minutos.',
     limitReached: ({ n }) => `Esta cuenta llegó a su límite mensual de ${n} facturas. Se renueva el mes próximo.`,
+    subitemsLoaded: ({ n }) => `• ${n} renglón(es) cargados como subelementos`,
   },
 }
 

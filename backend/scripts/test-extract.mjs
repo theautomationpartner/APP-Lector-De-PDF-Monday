@@ -27,6 +27,7 @@ const opts = Object.fromEntries(
 )
 const model = opts.model || 'claude-haiku-4-5'
 const countries = (opts.countries || '').split(',').map((c) => c.trim().toUpperCase()).filter(Boolean)
+const lineItems = 'lineitems' in opts // --lineitems: extrae renglones (como con el toggle ON)
 
 if (!files.length) {
   console.error('Uso: node scripts/test-extract.mjs <archivo.pdf> [...] [--countries=US,DE] [--model=...]')
@@ -43,7 +44,7 @@ for (const file of files) {
   const mediaType = MEDIA[extname(file).toLowerCase()] || 'application/pdf'
   try {
     const b64 = readFileSync(file).toString('base64')
-    const { data, usage } = await extractInvoice(b64, mediaType, model, { countries })
+    const { data, usage } = await extractInvoice(b64, mediaType, model, { countries, lineItems })
     totIn += usage.input_tokens; totOut += usage.output_tokens
     console.log(`País detectado: ${data.detected_country || '—'}   |   tokens in/out: ${usage.input_tokens}/${usage.output_tokens}`)
     console.log('-'.repeat(72))
@@ -55,6 +56,11 @@ for (const file of files) {
     }
     console.log('-'.repeat(72))
     console.log(`  → ${filled}/${activeFields.length} campos extraídos`)
+    if (lineItems) {
+      const li = data.line_items || []
+      console.log(`  RENGLONES (${li.length}):`)
+      for (const l of li) console.log(`    · ${l.description}  | cant: ${l.quantity || '—'}  | unit: ${l.unit_price || '—'}  | total: ${l.total || '—'}`)
+    }
   } catch (e) {
     console.error('  ERROR:', e.message)
   }

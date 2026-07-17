@@ -47,7 +47,7 @@ export async function runStartupMigrations() {
 export async function getBoardConfig(accountId, boardId) {
   const { rows } = await pool.query(
     `select mapping, status_column_id, file_column_id, country_override, currency_override, ui_language,
-            dedup_enabled, filter_mode, filter_tax_ids, countries, currencies
+            dedup_enabled, line_items_enabled, filter_mode, filter_tax_ids, countries, currencies
        from board_configs where account_id = $1 and board_id = $2`,
     [accountId, boardId],
   )
@@ -58,7 +58,7 @@ export async function saveBoardConfig(accountId, boardId, cfg = {}) {
   const {
     mapping = {}, language = 'en', fileColumnId = null,
     countries = [], currencies = [],
-    dedupEnabled = false, filterMode = 'all', filterTaxIds = [],
+    dedupEnabled = false, lineItemsEnabled = false, filterMode = 'all', filterTaxIds = [],
   } = cfg
   const cleanArr = (a) => (Array.isArray(a) ? a : []).map((s) => String(s).trim()).filter(Boolean)
   const countriesC = cleanArr(countries)
@@ -70,14 +70,14 @@ export async function saveBoardConfig(accountId, boardId, cfg = {}) {
   await pool.query(
     `insert into board_configs
        (account_id, board_id, mapping, country_override, currency_override, ui_language,
-        dedup_enabled, filter_mode, filter_tax_ids, countries, currencies, file_column_id, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now())
+        dedup_enabled, line_items_enabled, filter_mode, filter_tax_ids, countries, currencies, file_column_id, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
      on conflict (account_id, board_id) do update set
        mapping = $3, country_override = $4, currency_override = $5, ui_language = $6,
-       dedup_enabled = $7, filter_mode = $8, filter_tax_ids = $9,
-       countries = $10, currencies = $11, file_column_id = $12, updated_at = now()`,
+       dedup_enabled = $7, line_items_enabled = $8, filter_mode = $9, filter_tax_ids = $10,
+       countries = $11, currencies = $12, file_column_id = $13, updated_at = now()`,
     [accountId, boardId, JSON.stringify(mapping), countryO, currencyO, language,
-      !!dedupEnabled, filterMode || 'all', JSON.stringify(cleanTaxIds),
+      !!dedupEnabled, !!lineItemsEnabled, filterMode || 'all', JSON.stringify(cleanTaxIds),
       JSON.stringify(countriesC), JSON.stringify(currenciesC), fileColumnId || null],
   )
   // upsert de la instalación (defaults a nivel cuenta)

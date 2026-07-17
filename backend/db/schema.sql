@@ -46,6 +46,8 @@ ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS countries  JSONB NOT NULL DEF
 ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS currencies JSONB NOT NULL DEFAULT '[]'::jsonb;
 -- Columna de archivo elegida (de dónde sale el PDF). Vacío = auto-detectar.
 ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS file_column_id TEXT;
+-- Renglones como subítems (agregado 2026-07-14): un subítem por línea de la factura.
+ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS line_items_enabled BOOLEAN NOT NULL DEFAULT false;
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- extractions: histórico de cada lectura. Base para analytics / cobrar por uso.
