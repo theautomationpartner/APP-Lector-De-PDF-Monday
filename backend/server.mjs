@@ -134,7 +134,17 @@ function sanitizeConfigBody(body = {}) {
     language: ['en', 'es'].includes(body.language) ? body.language : 'en',
     fileColumnId: str(body.fileColumnId),
     dedupEnabled: !!body.dedupEnabled,
-    lineItemsEnabled: !!body.lineItemsEnabled,
+    ...(() => {
+      // Renglones: viven en el MAPEO (como el resto de los campos). Activado se
+      // deriva de mapear la descripción al nombre del subítem.
+      const src = (body.lineItemsMapping && typeof body.lineItemsMapping === 'object' && !Array.isArray(body.lineItemsMapping)) ? body.lineItemsMapping : {}
+      const col = (v) => (typeof v === 'string' ? v.slice(0, 64) : '')
+      const li = {
+        description: src.description === 'name' ? 'name' : '',
+        quantity: col(src.quantity), unit_price: col(src.unit_price), total: col(src.total),
+      }
+      return { lineItemsMapping: li, lineItemsEnabled: li.description === 'name' }
+    })(),
   }
 }
 
@@ -152,7 +162,7 @@ app.get('/api/config/:boardId', async (req, res) => {
       fileColumnId: cfg?.file_column_id || '',
       language: cfg?.ui_language || 'en',
       dedupEnabled: cfg?.dedup_enabled ?? false,
-      lineItemsEnabled: cfg?.line_items_enabled ?? false,
+      lineItemsMapping: cfg?.line_items_mapping || {},
     })
   } catch (e) {
     sendApiError(res, e)
@@ -283,7 +293,7 @@ app.post('/monday/extract', async (req, res) => {
     let subitemsCreated = 0
     if (cfg?.line_items_enabled && Array.isArray(data.line_items) && data.line_items.length) {
       try {
-        const r = await writeLineItemSubitems(shortLivedToken, itemId, data.line_items, lang)
+        const r = await writeLineItemSubitems(shortLivedToken, itemId, data.line_items, lang, cfg?.line_items_mapping || {})
         subitemsCreated = r.created
         if (r.skipped) console.log(`[extract] subitems salteados (el item ya tenía) item=${itemId}`)
       } catch (e) { console.warn('[extract] subitems fallaron:', e.message) }

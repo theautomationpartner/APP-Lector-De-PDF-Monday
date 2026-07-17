@@ -173,14 +173,14 @@ const SUBITEM_COL_TITLES = {
   es: { qty: 'Cantidad', unit: 'Precio unitario', total: 'Total' },
 }
 
-// Busca (o crea) las columnas numéricas del tablero de subítems. Devuelve
-// { qty, unit, total } con los column ids.
-async function ensureSubitemCols(token, subBoardId, lang) {
+// Busca (o crea) por título las columnas numéricas pedidas del tablero de
+// subítems. keys ⊆ ['qty','unit','total']. Devuelve { key: columnId }.
+async function ensureSubitemCols(token, subBoardId, lang, keys) {
   const titles = SUBITEM_COL_TITLES[lang] || SUBITEM_COL_TITLES.en
   const d = await gql(token, `query { boards(ids: [${Number(subBoardId)}]) { columns { id title type } } }`)
   const existing = d?.boards?.[0]?.columns || []
   const ids = {}
-  for (const key of ['qty', 'unit', 'total']) {
+  for (const key of keys) {
     const found = existing.find((c) => c.title.toLowerCase() === titles[key].toLowerCase())
     if (found) { ids[key] = found.id; continue }
     const r = await gql(token,
@@ -191,16 +191,20 @@ async function ensureSubitemCols(token, subBoardId, lang) {
   return ids
 }
 
-// Crea los subítems del item. IDEMPOTENTE: si el item ya tiene subítems (un
-// re-disparo de la receta), no crea nada (evita duplicar renglones).
+// Crea los subítems del item según el mapeo del tablero (liMap):
+//   quantity/unit_price/total = columnId elegido | '__auto__' (crear por título) | '' (no cargar).
+// IDEMPOTENTE: si el item ya tiene subítems (re-disparo), no crea nada.
 // Devuelve { created, skipped }.
-export async function writeLineItemSubitems(token, itemId, lines, lang = 'en') {
+export async function writeLineItemSubitems(token, itemId, lines, lang = 'en', liMap = {}) {
   const items = (Array.isArray(lines) ? lines : []).filter((l) => (l?.description || '').trim()).slice(0, 50)
   if (!items.length) return { created: 0, skipped: false }
   const pre = await gql(token, `query { items(ids: [${Number(itemId)}]) { subitems { id } } }`)
   if ((pre?.items?.[0]?.subitems || []).length) return { created: 0, skipped: true }
 
-  let subBoardId = null, cols = null, created = 0
+  // Destino de cada métrica según el mapeo ('' = el usuario no la mapeó → no se carga).
+  const want = { qty: liMap.quantity || '', unit: liMap.unit_price || '', total: liMap.total || '' }
+  const autoKeys = Object.entries(want).filter(([, v]) => v === '__auto__').map(([k]) => k)
+  let subBoardId = null, autoCols = {}, created = 0
   for (const ln of items) {
     // create_subitem crea la columna "Subitems" en el tablero padre si no existe;
     // la respuesta trae el board del subítem (recién ahí conocemos su id).
@@ -211,18 +215,17 @@ export async function writeLineItemSubitems(token, itemId, lines, lang = 'en') {
     if (!subId) continue
     if (!subBoardId) {
       subBoardId = r.create_subitem.board?.id
-      if (subBoardId) cols = await ensureSubitemCols(token, subBoardId, lang)
+      if (subBoardId && autoKeys.length) autoCols = await ensureSubitemCols(token, subBoardId, lang, autoKeys)
     }
-    if (cols) {
-      const cv = {}
-      const q = toNumber(ln.quantity);   if (q != null) cv[cols.qty] = String(q)
-      const u = toNumber(ln.unit_price); if (u != null) cv[cols.unit] = String(u)
-      const t = toNumber(ln.total);      if (t != null) cv[cols.total] = String(t)
-      if (Object.keys(cv).length) {
-        await gql(token,
-          `mutation ($b: ID!, $i: ID!, $cv: JSON!) { change_multiple_column_values(board_id: $b, item_id: $i, column_values: $cv) { id } }`,
-          { b: String(subBoardId), i: String(subId), cv: JSON.stringify(cv) })
-      }
+    const colOf = (k) => (want[k] === '__auto__' ? autoCols[k] : want[k]) || null
+    const cv = {}
+    const q = toNumber(ln.quantity);   const qc = colOf('qty');   if (q != null && qc) cv[qc] = String(q)
+    const u = toNumber(ln.unit_price); const uc = colOf('unit');  if (u != null && uc) cv[uc] = String(u)
+    const t = toNumber(ln.total);      const tc = colOf('total'); if (t != null && tc) cv[tc] = String(t)
+    if (Object.keys(cv).length && subBoardId) {
+      await gql(token,
+        `mutation ($b: ID!, $i: ID!, $cv: JSON!) { change_multiple_column_values(board_id: $b, item_id: $i, column_values: $cv) { id } }`,
+        { b: String(subBoardId), i: String(subId), cv: JSON.stringify(cv) })
     }
     created++
   }

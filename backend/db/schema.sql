@@ -47,7 +47,11 @@ ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS currencies JSONB NOT NULL DEF
 -- Columna de archivo elegida (de dónde sale el PDF). Vacío = auto-detectar.
 ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS file_column_id TEXT;
 -- Renglones como subítems (agregado 2026-07-14): un subítem por línea de la factura.
+-- line_items_enabled se deriva del mapeo (description = 'name' -> activado).
+-- line_items_mapping = { description: 'name'|'', quantity/unit_price/total:
+--   '<columnId del tablero de subítems>' | '__auto__' (crear por título) | '' (no cargar) }.
 ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS line_items_enabled BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS line_items_mapping JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- extractions: histórico de cada lectura. Base para analytics / cobrar por uso.

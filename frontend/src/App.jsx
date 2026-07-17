@@ -34,8 +34,12 @@ const DEFAULT_CONFIG = {
   fileColumnId: '',        // vacío = auto-detectar la columna de archivo
   countries: [],           // vacío = solo campos universales
   dedupEnabled: false,
-  lineItemsEnabled: false, // renglones de la factura como subítems
+  // Renglones → subítems: vive en el MAPEO como el resto de los campos.
+  // description 'name' = cargar (nombre del subítem); quantity/unit_price/total =
+  // columnId del tablero de subítems | '__auto__' (crearla) | '' (no cargar).
+  lineItemsMapping: {},
 }
+const EMPTY_LI = { description: '', quantity: '', unit_price: '', total: '' }
 
 export default function App() {
   const [context, setContext] = useState(null)
@@ -51,7 +55,8 @@ export default function App() {
   const [fileColumnId, setFileColumnId] = useState('')
   const [countries, setCountries] = useState([])
   const [dedupEnabled, setDedupEnabled] = useState(false)
-  const [lineItemsEnabled, setLineItemsEnabled] = useState(false)
+  const [liMap, setLiMap] = useState(EMPTY_LI)         // mapeo de renglones → subítems
+  const [subColumns, setSubColumns] = useState([])     // columnas del tablero de subítems
 
   const [saveState, setSaveState] = useState('idle') // idle | saving | saved | error
   const [dirty, setDirty] = useState(false)
@@ -91,15 +96,29 @@ export default function App() {
   // 2) Columnas: reales (monday) o de ejemplo (preview).
   useEffect(() => {
     if (previewMode) {
-      setBoardName('Sample board'); setColumns(MOCK_COLUMNS); setError(null); setLoading(false); return
+      setBoardName('Sample board'); setColumns(MOCK_COLUMNS); setError(null); setLoading(false)
+      setSubColumns([{ id: 'numbers_qty', title: 'Qty', type: 'numbers' }, { id: 'numbers_price', title: 'Unit price', type: 'numbers' }])
+      return
     }
     if (!boardId) return
     setLoading(true)
     monday
-      .api(`query { boards(ids: [${boardId}]) { name columns { id title type } } }`)
+      .api(`query { boards(ids: [${boardId}]) { name columns { id title type settings_str } } }`)
       .then((res) => {
         const board = res?.data?.boards?.[0]
         setBoardName(board?.name || ''); setColumns(board?.columns || []); setError(null)
+        // Columnas del tablero de SUBÍTEMS (para mapear los renglones). El id del
+        // tablero viene en los settings de la columna "Subitems" del tablero padre.
+        let subBoardId = null
+        try {
+          const sub = (board?.columns || []).find((c) => c.type === 'subtasks')
+          subBoardId = sub ? JSON.parse(sub.settings_str || '{}').boardIds?.[0] : null
+        } catch { /* sin subítems */ }
+        if (subBoardId) {
+          monday.api(`query { boards(ids: [${subBoardId}]) { columns { id title type } } }`)
+            .then((r) => setSubColumns(r?.data?.boards?.[0]?.columns || []))
+            .catch(() => setSubColumns([]))
+        } else setSubColumns([])
       })
       .catch((err) => setError(err?.message || 'Could not load columns'))
       .finally(() => setLoading(false))
@@ -128,7 +147,7 @@ export default function App() {
       setFileColumnId(cfg.fileColumnId || '')
       setCountries(cfg.countries || [])
       setDedupEnabled(!!cfg.dedupEnabled)
-      setLineItemsEnabled(!!cfg.lineItemsEnabled)
+      setLiMap({ ...EMPTY_LI, ...(cfg.lineItemsMapping || {}) })
       setDirty(false)
     }
     ;(async () => {
@@ -203,7 +222,7 @@ export default function App() {
 
   const collectConfig = () => ({
     language, mapping, fileColumnId, countries,
-    dedupEnabled, lineItemsEnabled,
+    dedupEnabled, lineItemsMapping: liMap,
   })
 
   const saveConfig = async () => {
@@ -230,7 +249,7 @@ export default function App() {
   // ─── Estado de los pasos (solo el mapeo es requerido; el resto opcional) ───
   const done1 = countries.length > 0
   const done2 = mappedCount > 0
-  const rulesTouched = dedupEnabled || lineItemsEnabled
+  const rulesTouched = dedupEnabled
   const completed = [done1, done2, rulesTouched].filter(Boolean).length
   const steps = [
     { n: 1, label: t('step1.label'), mark: done1 ? 'complete' : '', status: 'optional', statusText: t('status.optional') },
@@ -483,6 +502,50 @@ export default function App() {
                       </div>
                     </div>
                   ))}
+
+                  {/* Renglones → subítems: se mapean como el resto de los campos.
+                      Descripción = nombre del subítem (prende la función);
+                      cantidad/unitario/total → columnas del tablero de subítems. */}
+                  <div className="gd-card" style={{ marginTop: 18 }}>
+                    <div className="gd-card-head">
+                      <span className="gd-card-title">{t('lineitems.title')}</span>
+                      <span className="gd-card-tag">{t('status.optional')}</span>
+                    </div>
+                    <p className="step-lead" style={{ marginTop: 0 }}>{t('lineitems.lead')}</p>
+                    <div className="country-grid">
+                      <div className="field">
+                        <span className="field-label">{t('lineitems.description')}</span>
+                        <select
+                          className={`map-select ${liMap.description ? 'mapped' : 'unmapped'}`}
+                          value={liMap.description}
+                          onChange={(e) => { setLiMap((m) => ({ ...m, description: e.target.value })); touch() }}
+                        >
+                          <option value="">{t('lineitems.descOff')}</option>
+                          <option value="name">{t('lineitems.descOn')}</option>
+                        </select>
+                      </div>
+                      {['quantity', 'unit_price', 'total'].map((k) => (
+                        <div className="field" key={k}>
+                          <span className="field-label">{t(`lineitems.${k}`)}</span>
+                          <select
+                            className={`map-select ${liMap[k] ? 'mapped' : 'unmapped'}`}
+                            value={liMap[k]}
+                            disabled={!liMap.description}
+                            onChange={(e) => { setLiMap((m) => ({ ...m, [k]: e.target.value })); touch() }}
+                          >
+                            <option value="">— {t('placeholder.column')} —</option>
+                            <option value="__auto__">{t('lineitems.auto')}</option>
+                            {subColumns
+                              .filter((c) => ['numbers', 'numeric', 'text'].includes(c.type))
+                              .map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                    {liMap.description && !subColumns.length && (
+                      <div className="gd-note soft" style={{ marginTop: 12 }}>{t('lineitems.noSub')}</div>
+                    )}
+                  </div>
                 </section>
               )}
 
@@ -505,22 +568,6 @@ export default function App() {
                       <div className="gd-toggle-text">
                         <div className="gd-toggle-label">{dedupEnabled ? t('rules.dedup.onLabel') : t('rules.dedup.offLabel')}</div>
                         <div className="gd-toggle-help">{t('rules.dedup.help')}</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="gd-card" style={{ marginTop: 18 }}>
-                    <div className="gd-card-head"><span className="gd-card-title">{t('rules.lineitems.title')}</span></div>
-                    <div className="gd-toggle-row">
-                      <button
-                        type="button"
-                        className={`gd-switch ${lineItemsEnabled ? 'on' : ''}`}
-                        aria-pressed={lineItemsEnabled}
-                        onClick={() => { setLineItemsEnabled((v) => !v); touch() }}
-                      />
-                      <div className="gd-toggle-text">
-                        <div className="gd-toggle-label">{lineItemsEnabled ? t('rules.lineitems.onLabel') : t('rules.lineitems.offLabel')}</div>
-                        <div className="gd-toggle-help">{t('rules.lineitems.help')}</div>
                       </div>
                     </div>
                   </div>
