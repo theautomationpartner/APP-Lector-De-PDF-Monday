@@ -175,6 +175,22 @@ export async function setAccountPlan(accountId, plan) {
   )
 }
 
+// ── Corta-loops: lecturas recientes de la cuenta y del mismo item ──
+// accountMin / itemMin en minutos. Usa el índice idx_extractions_account.
+export async function recentReadCounts(accountId, itemId, accountMin = 60, itemMin = 15) {
+  const { rows } = await pool.query(
+    `select
+       count(*) filter (where created_at >= now() - make_interval(mins => $3::int)) as account_recent,
+       count(*) filter (where item_id::text = $2 and created_at >= now() - make_interval(mins => $4::int)) as same_item
+     from extractions where account_id = $1`,
+    [String(accountId), itemId != null ? String(itemId) : '', accountMin, itemMin],
+  )
+  return {
+    accountRecent: Number(rows[0]?.account_recent || 0),
+    sameItem: Number(rows[0]?.same_item || 0),
+  }
+}
+
 // ── Uso: cuántas facturas leyó la cuenta (para mostrarle el contador al usuario) ──
 // Solo lecturas exitosas (status='ok'). Incluye el plan y su límite mensual.
 export async function getUsage(accountId) {

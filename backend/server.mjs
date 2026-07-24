@@ -10,7 +10,7 @@ import {
   buildColumnValues, writeColumns, postComment, setStatus, getStatusColumnId,
   writeLineItemSubitems,
 } from './monday.mjs'
-import { runStartupMigrations, getBoardConfig, saveBoardConfig, logExtraction, claimInvoiceKey, releaseInvoiceKey, deleteAccountData, getUsage, setAccountPlan } from './db.mjs'
+import { runStartupMigrations, getBoardConfig, saveBoardConfig, logExtraction, claimInvoiceKey, releaseInvoiceKey, deleteAccountData, getUsage, setAccountPlan, recentReadCounts } from './db.mjs'
 import { planFromSubscription } from './plans.mjs'
 import { syncReading, syncInstallation } from './internal-board.mjs'
 import { t, lifecycleLabels } from './i18n.mjs'
@@ -214,6 +214,22 @@ app.post('/monday/extract', async (req, res) => {
     }
     if (!boardId) boardId = await getBoardIdFromItem(shortLivedToken, itemId)
     if (!boardId) throw new UserError(t(lang, 'noBoard', { itemId }))
+
+    // 1.5) CORTA-LOOPS (circuit breaker). Aplica a TODOS los planes, incluso
+    // Enterprise/ilimitado. Frena una automatización en bucle ANTES de gastar IA.
+    // Corta en seco SIN tocar el board (para no re-alimentar un loop disparado por
+    // cambio de estado). El costo de un loop cortado = una query a la DB, ~$0.
+    if (config.guardPerHour > 0 || config.guardSameItem > 0) {
+      const rc = await recentReadCounts(accountId, itemId)
+      if (config.guardSameItem > 0 && rc.sameItem >= config.guardSameItem) {
+        console.error(`[GUARD] posible LOOP en el mismo item=${itemId} account=${accountId} (${rc.sameItem} lecturas/15min) — cortado sin gastar IA`)
+        return res.status(200).json({ ok: false, error: 'loop guard: same item throttled' })
+      }
+      if (config.guardPerHour > 0 && rc.accountRecent >= config.guardPerHour) {
+        console.error(`[GUARD] RAFAGA anomala account=${accountId} (${rc.accountRecent} lecturas/hora) — cortado sin gastar IA`)
+        return res.status(200).json({ ok: false, error: 'loop guard: account rate throttled' })
+      }
+    }
 
     // 2) Config del tablero (mapeo + país/moneda + idioma) desde Postgres.
     const cfg = await getBoardConfig(accountId, boardId)

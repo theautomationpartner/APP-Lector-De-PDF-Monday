@@ -23,6 +23,11 @@ export const config = {
   // Plan por defecto para cuentas sin plan explícito en la DB. Durante la beta se
   // puede poner 'enterprise' para no limitar a nadie; en producción → 'free'.
   defaultPlan: process.env.DEFAULT_PLAN || 'free',
+  // Corta-loops (circuit breaker): topes DUROS por ventana corta que aplican a
+  // TODOS los planes, incluso Enterprise/ilimitado. Frenan una automatización en
+  // bucle antes de gastar IA. 0 = desactivar.
+  guardSameItem: Number(process.env.GUARD_SAME_ITEM ?? 8),    // mismo item en 15 min
+  guardPerHour:  Number(process.env.GUARD_PER_HOUR  ?? 600),  // lecturas/cuenta en 60 min
 
   // ── Secretos (solo se leen acá) ──
   databaseUrl: readEnv('DATABASE_URL', { secret: true }),
