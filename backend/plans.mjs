@@ -3,10 +3,10 @@
 // facturas, no en los asientos). `limit` = facturas/mes; `null` = ilimitado.
 // El enforcement vive en server.mjs; el plan de cada cuenta en installations.plan.
 export const PLANS = {
-  free:       { limit: 10,   label: 'Free' },
-  starter:    { limit: 50,   label: 'Starter' },
-  pro:        { limit: 200,  label: 'Pro' },
-  business:   { limit: 500,  label: 'Business' },
+  free:       { limit: 50,   label: 'Free' },
+  starter:    { limit: 150,  label: 'Starter' },
+  pro:        { limit: 400,  label: 'Pro' },
+  business:   { limit: 1000, label: 'Business' },
   enterprise: { limit: null, label: 'Enterprise' }, // ilimitado (fair-use)
 }
 
