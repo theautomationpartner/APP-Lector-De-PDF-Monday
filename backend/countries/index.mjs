@@ -15,17 +15,23 @@ export function promptFor(countries = []) {
   return blocks.length ? '\n\n' + blocks.join('\n\n') : ''
 }
 
-// Enriquecimiento post-LLM: el QR se decodifica UNA sola vez y se le pasa a cada
-// pack (ej. AR pisa los campos fiscales con el QR de AFIP). Best-effort: un país
-// que falla no frena a los otros; sin packs, no se decodifica nada.
-export async function enrichAll(data, countries, fileBase64, mediaType) {
+// ¿Alguno de los países seleccionados tiene pack con enrich? (para saber si vale
+// la pena arrancar la decodificación del QR en paralelo con la IA).
+export function anyPack(countries = []) {
+  return (countries || []).some((c) => PACKS[c]?.enrich)
+}
+
+// Enriquecimiento post-LLM. El QR se decodifica UNA vez (idealmente en paralelo con
+// la IA: pasar ctx.qr ya decodificado) y se le pasa a cada pack. Best-effort: un
+// país que falla no frena a los otros; sin packs, no hace nada.
+export async function enrichAll(data, countries, ctx = {}) {
   const packs = (countries || []).map((c) => PACKS[c]).filter((p) => p?.enrich)
   if (!packs.length) return
-  let qr = null
-  try { qr = await decodeInvoiceQr(fileBase64, mediaType) } catch { /* sin QR */ }
-  const ctx = { fileBase64, mediaType, qr }
+  const qr = ctx.qr !== undefined ? ctx.qr
+    : await decodeInvoiceQr(ctx.fileBase64, ctx.mediaType).catch(() => null)
+  const c = { fileBase64: ctx.fileBase64, mediaType: ctx.mediaType, qr }
   for (const pack of packs) {
-    try { await pack.enrich(data, ctx) }
+    try { await pack.enrich(data, c) }
     catch (e) { console.warn(`[pack ${pack.code}] enrich falló:`, e.message) }
   }
 }

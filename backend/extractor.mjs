@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { fieldsForCountries } from './fields.mjs'
 import { reconcileCodes } from './pdfcodes.mjs'
-import { promptFor, enrichAll } from './countries/index.mjs'
+import { promptFor, enrichAll, anyPack } from './countries/index.mjs'
+import { decodeInvoiceQr } from './qr.mjs'
 import { config } from './config.mjs'
 
 const client = new Anthropic({ apiKey: config.anthropicApiKey })
@@ -42,6 +43,11 @@ function buildSchema(fields, lineItems = false) {
 // hints = { country, currency } de la config, para desambiguar fecha/número/moneda.
 export async function extractInvoice(fileBase64, mediaType = 'application/pdf', model = 'claude-haiku-4-5', hints = {}) {
   const { countries = [], lineItems = false } = hints
+  // El QR de la factura se decodifica EN PARALELO con la IA (misma factura, tareas
+  // independientes) → no suma latencia, queda detrás de la llamada al modelo.
+  const qrPromise = anyPack(countries)
+    ? decodeInvoiceQr(fileBase64, mediaType).catch(() => null)
+    : Promise.resolve(null)
   // Campos = universales + capas de los países configurados (ej. AR agrega CAE, etc.).
   const fields = fieldsForCountries(countries)
   const schema = buildSchema(fields, lineItems)
@@ -119,8 +125,8 @@ export async function extractInvoice(fileBase64, mediaType = 'application/pdf', 
 
   // Enriquecimiento por país (packs): el QR de la factura pisa los campos fiscales
   // con el dato EXACTO (ej. AR: CUIT, número, total, CAE del QR de AFIP). Ground
-  // truth determinístico. Corre después del reconcile para ganarle al texto.
-  await enrichAll(data, countries, fileBase64, mediaType)
+  // truth determinístico. Usa el QR ya decodificado en paralelo (qrPromise).
+  await enrichAll(data, countries, { fileBase64, mediaType, qr: await qrPromise })
 
   return { data, usage: res.usage, model }
 }
