@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { fieldsForCountries } from './fields.mjs'
 import { reconcileCodes } from './pdfcodes.mjs'
+import { promptFor, enrichAll } from './countries/index.mjs'
 import { config } from './config.mjs'
 
 const client = new Anthropic({ apiKey: config.anthropicApiKey })
@@ -89,7 +90,9 @@ export async function extractInvoice(fileBase64, mediaType = 'application/pdf', 
               'cents, so "354.172" -> 354172 and "1.166.760" -> 1166760. A single separator followed by exactly ' +
               'THREE digits is a thousands separator, not a decimal. ' +
               'Currency as a 3-letter ISO 4217 code. ' +
-              'Also return detected_country as an ISO 3166-1 alpha-2 code (or "" if unclear). ' +
+              // Guía específica por país (packs) — solo para los países del tablero.
+              promptFor(countries) +
+              '\n\nAlso return detected_country as an ISO 3166-1 alpha-2 code (or "" if unclear). ' +
               'CLASSIFY the document in document_class as EXACTLY one of: "invoice" (a tax ' +
               'invoice / factura / bill), "credit_note" (nota de crédito), "debit_note" (nota ' +
               'de débito), or "other" for anything that is NOT one of those three — e.g. a ' +
@@ -113,6 +116,11 @@ export async function extractInvoice(fileBase64, mediaType = 'application/pdf', 
       if (fixed.length) console.log('[extractor] códigos corregidos desde el texto del PDF:', fixed.join(', '))
     } catch (e) { console.warn('[extractor] reconcile de códigos falló:', e.message) }
   }
+
+  // Enriquecimiento por país (packs): el QR de la factura pisa los campos fiscales
+  // con el dato EXACTO (ej. AR: CUIT, número, total, CAE del QR de AFIP). Ground
+  // truth determinístico. Corre después del reconcile para ganarle al texto.
+  await enrichAll(data, countries, fileBase64, mediaType)
 
   return { data, usage: res.usage, model }
 }
