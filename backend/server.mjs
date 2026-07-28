@@ -8,7 +8,7 @@ import { extractInvoice } from './extractor.mjs'
 import {
   getBoardIdFromItem, getLatestFileUrl, getColumnTypes,
   buildColumnValues, writeColumns, postComment, setStatus, getStatusColumnId,
-  writeLineItemSubitems,
+  writeLineItemSubitems, renameItem,
 } from './monday.mjs'
 import { runStartupMigrations, getBoardConfig, saveBoardConfig, logExtraction, claimInvoiceKey, releaseInvoiceKey, deleteAccountData, getUsage, setAccountPlan, recentReadCounts } from './db.mjs'
 import { planFromSubscription } from './plans.mjs'
@@ -134,6 +134,7 @@ function sanitizeConfigBody(body = {}) {
     language: ['en', 'es'].includes(body.language) ? body.language : 'en',
     fileColumnId: str(body.fileColumnId),
     dedupEnabled: !!body.dedupEnabled,
+    renameItemEnabled: !!body.renameItemEnabled,
     ...(() => {
       // Renglones: viven en el MAPEO (como el resto de los campos). Activado se
       // deriva de mapear la descripción al nombre del subítem.
@@ -162,6 +163,7 @@ app.get('/api/config/:boardId', async (req, res) => {
       fileColumnId: cfg?.file_column_id || '',
       language: cfg?.ui_language || 'en',
       dedupEnabled: cfg?.dedup_enabled ?? false,
+      renameItemEnabled: cfg?.rename_item_enabled ?? false,
       lineItemsMapping: cfg?.line_items_mapping || {},
     })
   } catch (e) {
@@ -313,6 +315,19 @@ app.post('/monday/extract', async (req, res) => {
         subitemsCreated = r.created
         if (r.skipped) console.log(`[extract] subitems salteados (el item ya tenía) item=${itemId}`)
       } catch (e) { console.warn('[extract] subitems fallaron:', e.message) }
+    }
+
+    // 6.6) Renombrar el ítem (si la regla está activa) al formato estándar
+    // "N° comprobante – Emisor". Va DESPUÉS de escribir columnas para ganarle a un
+    // mapeo de supplier→Name. Best-effort: si falla, las columnas ya quedaron.
+    if (cfg?.rename_item_enabled) {
+      const num = (data.invoice_number || '').toString().trim()
+      const sup = (data.supplier_name || '').toString().trim()
+      const newName = num && sup ? `${num} – ${sup}` : (num || sup || '')
+      if (newName) {
+        try { await renameItem(shortLivedToken, boardId, itemId, newName) }
+        catch (e) { console.warn('[extract] renombrar ítem falló:', e.message) }
+      }
     }
 
     // 7) Estado → "leido" + comentario con lo cargado.

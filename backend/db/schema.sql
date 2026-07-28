@@ -52,6 +52,8 @@ ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS file_column_id TEXT;
 --   '<columnId del tablero de subítems>' | '__auto__' (crear por título) | '' (no cargar) }.
 ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS line_items_enabled BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS line_items_mapping JSONB NOT NULL DEFAULT '{}'::jsonb;
+-- Renombrar el ítem con formato estándar "N° comprobante – Emisor" (2026-07-24).
+ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS rename_item_enabled BOOLEAN NOT NULL DEFAULT false;
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- extractions: histórico de cada lectura. Base para analytics / cobrar por uso.

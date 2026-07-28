@@ -140,6 +140,17 @@ export async function writeColumns(token, boardId, itemId, cv) {
   await gql(token, m, { b: String(boardId), i: String(itemId), cv: JSON.stringify(cv) })
 }
 
+// Renombra el ítem (su Name). change_multiple_column_values acepta la
+// pseudo-columna "name". Cap 255 (límite de monday). No hace nada si name vacío.
+export async function renameItem(token, boardId, itemId, name) {
+  const n = String(name || '').trim().slice(0, 255)
+  if (!n) return
+  const m = `mutation ($b: ID!, $i: ID!, $cv: JSON!) {
+    change_multiple_column_values(board_id: $b, item_id: $i, column_values: $cv) { id }
+  }`
+  await gql(token, m, { b: String(boardId), i: String(itemId), cv: JSON.stringify({ name: n }) })
+}
+
 // Deja un comentario en el item con lo que se cargó.
 export async function postComment(token, itemId, body) {
   const m = `mutation ($i: ID!, $b: String!) { create_update(item_id: $i, body: $b) { id } }`
