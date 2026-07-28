@@ -95,6 +95,28 @@ export async function saveBoardConfig(accountId, boardId, cfg = {}) {
   )
 }
 
+// Idioma guardado a nivel cuenta (fallback para tableros que aún no se guardaron).
+export async function getInstallationLanguage(accountId) {
+  const { rows } = await pool.query('select ui_language from installations where account_id = $1', [String(accountId)])
+  return rows[0]?.ui_language || null
+}
+
+// Auto-guardado SOLO del idioma (no toca el mapeo ni las reglas): es una
+// preferencia, no debería requerir el botón Guardar. Actualiza la fila del
+// tablero si existe + upsert del default de la cuenta.
+export async function saveLanguage(accountId, boardId, language) {
+  const lang = ['en', 'es'].includes(language) ? language : 'en'
+  await pool.query(
+    'update board_configs set ui_language = $3, updated_at = now() where account_id = $1 and board_id = $2',
+    [String(accountId), String(boardId), lang],
+  )
+  await pool.query(
+    `insert into installations (account_id, ui_language, updated_at) values ($1, $2, now())
+     on conflict (account_id) do update set ui_language = $2, updated_at = now()`,
+    [String(accountId), lang],
+  )
+}
+
 // ── Anti-duplicados: registro de facturas ya cargadas ──
 export async function findInvoiceKey(accountId, boardId, key) {
   const { rows } = await pool.query(

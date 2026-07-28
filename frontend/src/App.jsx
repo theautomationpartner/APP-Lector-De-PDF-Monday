@@ -50,7 +50,9 @@ export default function App() {
   const [previewMode, setPreviewMode] = useState(false)
 
   const [step, setStep] = useState(2) // abre en Mapeo (el paso esencial); Países/Reglas son opcionales
-  const [language, setLanguage] = useState('en')
+  const [language, setLanguage] = useState(() => {
+    try { return localStorage.getItem('air_lang') || 'en' } catch { return 'en' }
+  })
   const [mapping, setMapping] = useState({})
   const [fileColumnId, setFileColumnId] = useState('')
   const [countries, setCountries] = useState([])
@@ -218,7 +220,20 @@ export default function App() {
 
   const touch = () => { setDirty(true); setSaveState('idle') }
   const handleMap = (fieldId, value) => { setMapping((m) => ({ ...m, [fieldId]: value })); touch() }
-  const changeLanguage = (lng) => { setLanguage(lng); touch() }
+  // El idioma es una preferencia: se aplica y AUTO-GUARDA al instante, sin marcar
+  // el config como "sin guardar" ni pedir el botón Guardar.
+  const changeLanguage = (lng) => {
+    setLanguage(lng)
+    try { localStorage.setItem('air_lang', lng) } catch { /* noop */ }
+    if (previewMode || !boardId) return
+    getSessionToken().then((token) =>
+      fetch(`/api/config/${boardId}/language`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: token } : {}) },
+        body: JSON.stringify({ language: lng }),
+      }).catch(() => { /* best-effort */ }),
+    )
+  }
   const toggleCountry = (c) => { setCountries((a) => a.includes(c) ? a.filter((x) => x !== c) : [...a, c]); touch() }
 
   // Nada es obligatorio: se puede guardar cualquier cambio.

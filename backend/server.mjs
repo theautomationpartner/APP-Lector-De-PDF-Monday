@@ -10,7 +10,7 @@ import {
   buildColumnValues, writeColumns, postComment, setStatus, getStatusColumnId,
   writeLineItemSubitems, renameItem,
 } from './monday.mjs'
-import { runStartupMigrations, getBoardConfig, saveBoardConfig, logExtraction, claimInvoiceKey, releaseInvoiceKey, deleteAccountData, getUsage, setAccountPlan, recentReadCounts } from './db.mjs'
+import { runStartupMigrations, getBoardConfig, saveBoardConfig, logExtraction, claimInvoiceKey, releaseInvoiceKey, deleteAccountData, getUsage, setAccountPlan, recentReadCounts, saveLanguage, getInstallationLanguage } from './db.mjs'
 import { planFromSubscription } from './plans.mjs'
 import { syncReading, syncInstallation } from './internal-board.mjs'
 import { t, lifecycleLabels } from './i18n.mjs'
@@ -157,12 +157,15 @@ app.get('/api/config/:boardId', async (req, res) => {
     const cfg = await getBoardConfig(accountId, req.params.boardId)
     const countries = cfg?.countries?.length ? cfg.countries : (cfg?.country_override ? [cfg.country_override] : [])
     const currencies = cfg?.currencies?.length ? cfg.currencies : (cfg?.currency_override ? [cfg.currency_override] : [])
+    // Idioma: el del tablero, o el default de la cuenta (así persiste aunque el
+    // tablero todavía no se haya guardado por completo).
+    const language = cfg?.ui_language || (await getInstallationLanguage(accountId)) || 'en'
     res.json({
       mapping: cfg?.mapping || {},
       countries,
       currencies,
       fileColumnId: cfg?.file_column_id || '',
-      language: cfg?.ui_language || 'en',
+      language,
       dedupEnabled: cfg?.dedup_enabled ?? false,
       renameItemEnabled: cfg?.rename_item_enabled ?? false,
       onlyFiscalDocs: cfg?.only_fiscal_docs ?? false,
@@ -177,6 +180,17 @@ app.post('/api/config/:boardId', async (req, res) => {
   try {
     const { accountId } = authSession(req)
     await saveBoardConfig(accountId, req.params.boardId, sanitizeConfigBody(req.body))
+    res.json({ ok: true })
+  } catch (e) {
+    sendApiError(res, e)
+  }
+})
+
+// Auto-guardado del idioma (preferencia; no requiere el botón Guardar).
+app.post('/api/config/:boardId/language', async (req, res) => {
+  try {
+    const { accountId } = authSession(req)
+    await saveLanguage(accountId, req.params.boardId, req.body?.language)
     res.json({ ok: true })
   } catch (e) {
     sendApiError(res, e)
