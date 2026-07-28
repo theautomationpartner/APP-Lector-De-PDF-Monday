@@ -30,6 +30,15 @@ export function fieldsForCountries(countries = []) {
   return [...ALL_FIELDS, ...extra.filter((f) => !ALL_FIELDS.includes(f))]
 }
 
+// Columnas que hay que crear/mapear para un set de campos: [{ field, type }].
+// El tipo de columna de monday se deriva del campo (numbers / date / text).
+export function neededColumns(fieldIds = []) {
+  return fieldIds.map((f) => ({
+    field: f,
+    type: NUMERIC_FIELDS.includes(f) ? 'numbers' : DATE_FIELDS.includes(f) ? 'date' : 'text',
+  }))
+}
+
 // Listas curadas para los defaults (ISO). "" = auto-detect.
 export const COUNTRIES = [
   'AR', 'AU', 'BR', 'CA', 'CL', 'CO', 'DE', 'EC', 'ES', 'FR', 'GB', 'IT', 'MX', 'PE', 'PT', 'US', 'UY',

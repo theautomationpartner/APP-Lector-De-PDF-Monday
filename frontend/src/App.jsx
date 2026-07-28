@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import mondaySdk from 'monday-sdk-js'
 import { makeT, LANGUAGES } from './i18n.js'
-import { ALL_FIELDS, COUNTRY_FIELDS, fieldsForCountries, COUNTRIES, autoMapColumns } from './fields.js'
+import { ALL_FIELDS, COUNTRY_FIELDS, fieldsForCountries, COUNTRIES, autoMapColumns, neededColumns } from './fields.js'
 
 // Instancia única del SDK de monday. Dentro del iframe del board, monday.api()
 // usa la sesión del usuario logueado.
@@ -63,6 +63,7 @@ export default function App() {
   const [subColumns, setSubColumns] = useState([])     // columnas del tablero de subítems
 
   const [saveState, setSaveState] = useState('idle') // idle | saving | saved | error
+  const [prepState, setPrepState] = useState('idle') // idle | working | done  ("Preparar mi tablero")
   const [dirty, setDirty] = useState(false)
   const [autoMappedCount, setAutoMappedCount] = useState(0)
   const contextArrived = useRef(false)
@@ -235,6 +236,44 @@ export default function App() {
     )
   }
   const toggleCountry = (c) => { setCountries((a) => a.includes(c) ? a.filter((x) => x !== c) : [...a, c]); touch() }
+
+  // "Preparar mi tablero": crea las columnas que faltan (universales + del/los país/es
+  // elegidos) en el board y las mapea solas. Aditivo: no borra ni pisa nada existente
+  // (conserva el mapeo que ya había y reusa columnas por nombre). Usa el token del
+  // usuario (monday.api) → requiere permiso de edición del tablero.
+  const prepareBoard = async () => {
+    if (previewMode || !boardId || prepState === 'working') return
+    setPrepState('working')
+    try {
+      const map = { ...autoMapColumns(columns), ...mapping } // reusa por nombre + conserva lo ya mapeado
+      const cols = [...columns]
+      const mkCol = async (title, type) => {
+        const r = await monday.api(
+          `mutation($b: ID!, $t: String!, $ct: ColumnType!){ create_column(board_id:$b, title:$t, column_type:$ct){ id title type } }`,
+          { variables: { b: String(boardId), t: title, ct: type } },
+        )
+        const c = r?.data?.create_column
+        if (c?.id) cols.push(c)
+        return c?.id || null
+      }
+      // Columnas de datos (universales + país). supplier_name usa la columna Name si existe.
+      for (const { field, type } of neededColumns(fieldsForCountries(countries))) {
+        if (map[field]) continue
+        if (field === 'supplier_name') { const n = cols.find((c) => c.type === 'name'); if (n) { map[field] = n.id; continue } }
+        const id = await mkCol(t(`field.${field}`), type).catch(() => null)
+        if (id) map[field] = id
+      }
+      // Columna de archivo (de dónde sale el PDF) si el tablero no tiene ninguna.
+      let fileCol = fileColumnId || cols.find((c) => c.type === 'file')?.id
+      if (!fileCol) fileCol = await mkCol(t('prep.fileTitle'), 'file').catch(() => null)
+      setColumns(cols)
+      setMapping(map)
+      if (fileCol) setFileColumnId(fileCol)
+      setAutoMappedCount(Object.keys(map).length)
+      setDirty(true); setSaveState('idle')
+      setPrepState('done'); setTimeout(() => setPrepState('idle'), 3200)
+    } catch (e) { setError(e?.message || 'No se pudieron crear las columnas'); setPrepState('idle') }
+  }
 
   // Nada es obligatorio: se puede guardar cualquier cambio.
   const canSave = dirty && saveState !== 'saving'
@@ -444,6 +483,23 @@ export default function App() {
                     </div>
                     <div className="gd-note soft">{t('step1.allNote')}</div>
                   </div>
+
+                  {/* Preparar tablero: crea y mapea las columnas del/los país/es elegido/s */}
+                  {!previewMode && (
+                    <div className="gd-card prep-card" style={{ marginTop: 16 }}>
+                      <div>
+                        <div className="gd-card-title">{t('prep.title')}</div>
+                        <div className="gd-toggle-help" style={{ marginTop: 4 }}>
+                          {countries.length
+                            ? t('prep.help', { paises: countries.map((c) => t('country.' + c)).join(', ') })
+                            : t('prep.helpEmpty')}
+                        </div>
+                      </div>
+                      <button className="save-btn" onClick={prepareBoard} disabled={prepState === 'working'}>
+                        {prepState === 'working' ? t('prep.working') : prepState === 'done' ? t('prep.done') : t('prep.button')}
+                      </button>
+                    </div>
+                  )}
                 </section>
               )}
 
