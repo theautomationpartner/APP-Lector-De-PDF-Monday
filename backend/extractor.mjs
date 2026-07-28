@@ -12,7 +12,10 @@ const client = new Anthropic({ apiKey: config.anthropicApiKey })
 function buildSchema(fields, lineItems = false) {
   const props = Object.fromEntries(fields.map(([id]) => [id, { type: 'string' }]))
   props.detected_country = { type: 'string' }
-  const required = [...fields.map(([id]) => id), 'detected_country']
+  // Clasificación del documento (para el filtro "solo facturas/NC/ND"). Siempre
+  // presente; el gate se aplica o no según la config del tablero.
+  props.document_class = { type: 'string' }
+  const required = [...fields.map(([id]) => id), 'detected_country', 'document_class']
   if (lineItems) {
     props.line_items = {
       type: 'array', // sin maxItems: structured outputs no lo soporta (el cap de 50 está al crear los subítems)
@@ -86,7 +89,12 @@ export async function extractInvoice(fileBase64, mediaType = 'application/pdf', 
               'cents, so "354.172" -> 354172 and "1.166.760" -> 1166760. A single separator followed by exactly ' +
               'THREE digits is a thousands separator, not a decimal. ' +
               'Currency as a 3-letter ISO 4217 code. ' +
-              'Also return detected_country as an ISO 3166-1 alpha-2 code (or "" if unclear).' +
+              'Also return detected_country as an ISO 3166-1 alpha-2 code (or "" if unclear). ' +
+              'CLASSIFY the document in document_class as EXACTLY one of: "invoice" (a tax ' +
+              'invoice / factura / bill), "credit_note" (nota de crédito), "debit_note" (nota ' +
+              'de débito), or "other" for anything that is NOT one of those three — e.g. a ' +
+              'delivery note / remito, a receipt / ticket, a quote / presupuesto, a purchase ' +
+              'order / orden de compra, or an account statement. If you are unsure, use "invoice".' +
               hintText + lineItemsText + '\n\n' + fieldGuide,
           },
         ],

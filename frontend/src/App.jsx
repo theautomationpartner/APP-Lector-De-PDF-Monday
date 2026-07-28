@@ -56,6 +56,7 @@ export default function App() {
   const [countries, setCountries] = useState([])
   const [dedupEnabled, setDedupEnabled] = useState(false)
   const [renameItemEnabled, setRenameItemEnabled] = useState(false)
+  const [onlyFiscalDocs, setOnlyFiscalDocs] = useState(false)
   const [liMap, setLiMap] = useState(EMPTY_LI)         // mapeo de renglones → subítems
   const [subColumns, setSubColumns] = useState([])     // columnas del tablero de subítems
 
@@ -149,6 +150,7 @@ export default function App() {
       setCountries(cfg.countries || [])
       setDedupEnabled(!!cfg.dedupEnabled)
       setRenameItemEnabled(!!cfg.renameItemEnabled)
+      setOnlyFiscalDocs(!!cfg.onlyFiscalDocs)
       setLiMap({ ...EMPTY_LI, ...(cfg.lineItemsMapping || {}) })
       setDirty(false)
     }
@@ -224,7 +226,7 @@ export default function App() {
 
   const collectConfig = () => ({
     language, mapping, fileColumnId, countries,
-    dedupEnabled, renameItemEnabled, lineItemsMapping: liMap,
+    dedupEnabled, renameItemEnabled, onlyFiscalDocs, lineItemsMapping: liMap,
   })
 
   const saveConfig = async () => {
@@ -251,7 +253,7 @@ export default function App() {
   // ─── Estado de los pasos (solo el mapeo es requerido; el resto opcional) ───
   const done1 = countries.length > 0
   const done2 = mappedCount > 0
-  const rulesTouched = dedupEnabled || renameItemEnabled
+  const rulesTouched = dedupEnabled || renameItemEnabled || onlyFiscalDocs
   const completed = [done1, done2, rulesTouched].filter(Boolean).length
   const steps = [
     { n: 1, label: t('step1.label'), mark: done1 ? 'complete' : '', status: 'optional', statusText: t('status.optional') },
@@ -586,6 +588,22 @@ export default function App() {
                       <div className="gd-toggle-text">
                         <div className="gd-toggle-label">{renameItemEnabled ? t('rules.rename.onLabel') : t('rules.rename.offLabel')}</div>
                         <div className="gd-toggle-help">{t('rules.rename.help')}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="gd-card" style={{ marginTop: 18 }}>
+                    <div className="gd-card-head"><span className="gd-card-title">{t('rules.fiscal.title')}</span></div>
+                    <div className="gd-toggle-row">
+                      <button
+                        type="button"
+                        className={`gd-switch ${onlyFiscalDocs ? 'on' : ''}`}
+                        aria-pressed={onlyFiscalDocs}
+                        onClick={() => { setOnlyFiscalDocs((v) => !v); touch() }}
+                      />
+                      <div className="gd-toggle-text">
+                        <div className="gd-toggle-label">{onlyFiscalDocs ? t('rules.fiscal.onLabel') : t('rules.fiscal.offLabel')}</div>
+                        <div className="gd-toggle-help">{t('rules.fiscal.help')}</div>
                       </div>
                     </div>
                   </div>

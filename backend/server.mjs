@@ -135,6 +135,7 @@ function sanitizeConfigBody(body = {}) {
     fileColumnId: str(body.fileColumnId),
     dedupEnabled: !!body.dedupEnabled,
     renameItemEnabled: !!body.renameItemEnabled,
+    onlyFiscalDocs: !!body.onlyFiscalDocs,
     ...(() => {
       // Renglones: viven en el MAPEO (como el resto de los campos). Activado se
       // deriva de mapear la descripción al nombre del subítem.
@@ -164,6 +165,7 @@ app.get('/api/config/:boardId', async (req, res) => {
       language: cfg?.ui_language || 'en',
       dedupEnabled: cfg?.dedup_enabled ?? false,
       renameItemEnabled: cfg?.rename_item_enabled ?? false,
+      onlyFiscalDocs: cfg?.only_fiscal_docs ?? false,
       lineItemsMapping: cfg?.line_items_mapping || {},
     })
   } catch (e) {
@@ -273,6 +275,17 @@ app.post('/monday/extract', async (req, res) => {
       MODEL,
       { countries: cfg?.countries || [], lineItems: !!cfg?.line_items_enabled },
     )
+
+    // 5.4) FILTRO tipo de documento: si el tablero pidió "solo facturas/NC/ND" y
+    // la IA clasificó el documento como "other" (remito, ticket, presupuesto, OC…),
+    // NO se carga. Se marca Ignorada + comentario con lo que parecía ser.
+    if (cfg?.only_fiscal_docs && String(data.document_class || '').toLowerCase() === 'other') {
+      if (statusColId) await setStatus(shortLivedToken, boardId, itemId, statusColId, labels.ignored)
+      await postComment(shortLivedToken, itemId, t(lang, 'notFiscalDoc', { type: data.document_type || '?' }))
+      await logExtraction({ accountId, boardId, itemId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ignored' })
+      console.log(`[extract] IGNORADA (no fiscal) item=${itemId} class=${data.document_class} type="${data.document_type}"`)
+      return res.status(200).json({ ok: true, ignored: true })
+    }
 
     // 5.5) ANTI-DUPLICADOS (antes de escribir). IDs fiscales normalizados a
     // alfanumérico-mayúscula para comparar (guiones/puntos/espacios no afectan).
