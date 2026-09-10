@@ -1,0 +1,42 @@
+{
+  "document_type": "Factura E",
+  "document_class": "invoice",
+  "invoice_number": "00004-00000045",
+  "issue_date": "2026-07-10",
+  "currency": "USD",
+  "supplier_name": "DISTRIBUIDORA DEMO S.A.",
+  "supplier_tax_id": "30-12345678-1",
+  "customer_name": "ACME GLOBAL INC.",
+  "customer_tax_id": "",
+  "subtotal": 10000,
+  "tax_amount": "",
+  "total_amount": 10000,
+  "ar_tipo_comprobante": "Factura E",
+  "ar_comprobante_asociado": "",
+  "ar_punto_venta": "00004",
+  "ar_cae": "75210000000045",
+  "ar_cae_vto": "2026-07-20",
+  "ar_condicion_iva": "Responsable Inscripto",
+  "ar_condicion_iva_receptor": "Cliente del Exterior",
+  "ar_neto_no_gravado": "",
+  "ar_exento": "",
+  "ar_iva_21": "",
+  "ar_iva_105": "",
+  "ar_iva_27": "",
+  "ar_percepcion_iva": "",
+  "ar_percepcion_iibb": "",
+  "ar_percepcion_ganancias": "",
+  "ar_impuestos_internos": "",
+  "ar_otros_tributos": "",
+  "ar_periodo_desde": "",
+  "ar_periodo_hasta": "",
+  "ar_cotizacion": 1350,
+  "line_items": [
+    {
+      "description": "Aluminum profiles (export)",
+      "quantity": 500,
+      "unit_price": 20,
+      "total": 10000
+    }
+  ]
+}

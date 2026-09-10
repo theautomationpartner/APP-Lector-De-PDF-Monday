@@ -1,0 +1,42 @@
+{
+  "document_type": "Nota de Débito A",
+  "document_class": "debit_note",
+  "invoice_number": "00032-00002471",
+  "issue_date": "2026-08-03",
+  "currency": "ARS",
+  "supplier_name": "DISTRIBUIDORA DEMO S.A.",
+  "supplier_tax_id": "30-12345678-1",
+  "customer_name": "FERRETERÍA INDUSTRIAL S.A.",
+  "customer_tax_id": "30-99887766-7",
+  "subtotal": 5000,
+  "tax_amount": 1050,
+  "total_amount": 6050,
+  "ar_tipo_comprobante": "Nota de Débito A",
+  "ar_comprobante_asociado": "0032-00002468",
+  "ar_punto_venta": "00032",
+  "ar_cae": "86316000002471",
+  "ar_cae_vto": "2026-08-13",
+  "ar_condicion_iva": "Responsable Inscripto",
+  "ar_condicion_iva_receptor": "Responsable Inscripto",
+  "ar_neto_no_gravado": "",
+  "ar_exento": "",
+  "ar_iva_21": 1050,
+  "ar_iva_105": "",
+  "ar_iva_27": "",
+  "ar_percepcion_iva": "",
+  "ar_percepcion_iibb": "",
+  "ar_percepcion_ganancias": "",
+  "ar_impuestos_internos": "",
+  "ar_otros_tributos": "",
+  "ar_periodo_desde": "",
+  "ar_periodo_hasta": "",
+  "ar_cotizacion": "",
+  "line_items": [
+    {
+      "description": "Intereses por mora",
+      "quantity": 1,
+      "unit_price": 5000,
+      "total": 5000
+    }
+  ]
+}

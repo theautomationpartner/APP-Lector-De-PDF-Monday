@@ -59,7 +59,12 @@ for (const file of files) {
     if (lineItems) {
       const li = data.line_items || []
       console.log(`  RENGLONES (${li.length}):`)
-      for (const l of li) console.log(`    · ${l.description}  | cant: ${l.quantity || '—'}  | unit: ${l.unit_price || '—'}  | total: ${l.total || '—'}`)
+      for (const l of li) {
+        console.log(`    · ${String(l.description).slice(0, 44).padEnd(44)} cant:${String(l.quantity || '—').padStart(7)} unit:${String(l.unit_price || '—').padStart(11)} bonif:${String(l.bonificacion || '—').padStart(5)} sub:${String(l.subtotal || '—').padStart(11)} iva:${String(l.iva || '—').padStart(5)} tot:${String(l.total || '—').padStart(11)}`)
+      }
+      // Control: ¿la suma de los renglones se parece al neto de la factura?
+      const sumLi = li.reduce((a, l) => a + (parseFloat(l.total) || 0), 0)
+      console.log(`    suma de renglones: ${sumLi.toFixed(2)}  |  subtotal de la factura: ${data.subtotal || '—'}`)
     }
   } catch (e) {
     console.error('  ERROR:', e.message)

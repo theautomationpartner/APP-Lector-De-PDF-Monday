@@ -57,6 +57,24 @@ ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS rename_item_enabled BOOLEAN N
 -- Solo documentos fiscales: factura / nota de crédito / nota de débito. Ignora
 -- remitos, tickets, presupuestos, etc. (2026-07-24).
 ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS only_fiscal_docs BOOLEAN NOT NULL DEFAULT false;
+-- Actualizar la columna de estado del ítem (leyendo / leído / error). Prendido por
+-- defecto, pero se puede apagar para que la app NO toque el estado (2026-08-07).
+-- La columna destino sale de status_column_id (elegida en el mapeo): NUNCA se
+-- adivina. Ver getStatusColumnId() en monday.mjs.
+ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS status_enabled BOOLEAN NOT NULL DEFAULT true;
+
+-- Tipo de documento que lee el tablero (2026-09-10). Segunda dimensión junto al
+-- país: un tablero es de UN país y UN tipo. 'fiscal' = facturas/NC/ND (lo de
+-- siempre), 'remito' = remitos. Default 'fiscal' → todo lo existente sigue igual.
+ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS doc_kind TEXT NOT NULL DEFAULT 'fiscal';
+-- IDs fiscales sin puntuación: "30-52333600-9" -> "30523336009" (2026-08-07). Para
+-- cruzar con sistemas contables/ERP que los guardan sin guiones. Off por defecto:
+-- se escribe como viene impreso en la factura.
+ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS tax_ids_plain BOOLEAN NOT NULL DEFAULT false;
+-- El usuario confirma que YA creó la automatización en monday (2026-08-07). La app no
+-- puede saberlo sola: monday no expone si la receta existe. Sin esto, el paso 2 se
+-- marcaba "Listo" solo por haber mapeado campos y el usuario creía que estaba activo.
+ALTER TABLE board_configs ADD COLUMN IF NOT EXISTS automation_confirmed BOOLEAN NOT NULL DEFAULT false;
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- extractions: histórico de cada lectura. Base para analytics / cobrar por uso.
@@ -94,7 +112,26 @@ CREATE TABLE IF NOT EXISTS invoice_keys (
   PRIMARY KEY (account_id, board_id, dedup_key)
 );
 
+-- ───────────────────────────────────────────────────────────────────────────
+-- subitem_claims: derecho EXCLUSIVO a crear los subítems de un ítem (2026-08-07).
+-- Antes se hacía "¿ya tiene subítems? → crear", y entre la pregunta y la creación
+-- entraba un segundo disparo: los dos veían 0 y los dos creaban (renglones
+-- duplicados). El insert-first es atómico: solo uno gana. Mismo patrón que
+-- invoice_keys. Se libera si la creación falla, para poder reintentar.
+-- ───────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS subitem_claims (
+  account_id  BIGINT      NOT NULL,
+  item_id     BIGINT      NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (account_id, item_id)
+);
+
 -- Mapeo a los tableros internos de ops (Board 1 instalaciones + Board 2 lecturas):
 -- board_item_id = el item que representa esta fila en Monday, para actualizarlo.
 ALTER TABLE installations ADD COLUMN IF NOT EXISTS board_item_id BIGINT;
+-- Nombre y slug de la cuenta de monday (2026-08-31). Sin esto, para soporte solo
+-- teníamos el ID numérico: no se podía saber de qué cliente era un tablero ni armar
+-- el link (https://<slug>.monday.com/boards/<id>).
+ALTER TABLE installations ADD COLUMN IF NOT EXISTS account_name TEXT;
+ALTER TABLE installations ADD COLUMN IF NOT EXISTS account_slug TEXT;
 ALTER TABLE extractions   ADD COLUMN IF NOT EXISTS board_item_id BIGINT;

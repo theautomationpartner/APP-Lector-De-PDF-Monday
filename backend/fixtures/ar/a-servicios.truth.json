@@ -1,0 +1,42 @@
+{
+  "document_type": "Factura A",
+  "document_class": "invoice",
+  "invoice_number": "00012-00000900",
+  "issue_date": "2026-08-01",
+  "currency": "ARS",
+  "supplier_name": "SERVICIOS PRUEBA S.R.L.",
+  "supplier_tax_id": "30-55667788-9",
+  "customer_name": "FERRETERÍA INDUSTRIAL S.A.",
+  "customer_tax_id": "30-99887766-7",
+  "subtotal": 60000,
+  "tax_amount": 12600,
+  "total_amount": 72600,
+  "ar_tipo_comprobante": "Factura A",
+  "ar_comprobante_asociado": "",
+  "ar_punto_venta": "00012",
+  "ar_cae": "75210000000900",
+  "ar_cae_vto": "2026-08-11",
+  "ar_condicion_iva": "Responsable Inscripto",
+  "ar_condicion_iva_receptor": "Responsable Inscripto",
+  "ar_neto_no_gravado": "",
+  "ar_exento": "",
+  "ar_iva_21": 12600,
+  "ar_iva_105": "",
+  "ar_iva_27": "",
+  "ar_percepcion_iva": "",
+  "ar_percepcion_iibb": "",
+  "ar_percepcion_ganancias": "",
+  "ar_impuestos_internos": "",
+  "ar_otros_tributos": "",
+  "ar_periodo_desde": "2026-07-01",
+  "ar_periodo_hasta": "2026-07-31",
+  "ar_cotizacion": "",
+  "line_items": [
+    {
+      "description": "Abono mensual soporte IT",
+      "quantity": 1,
+      "unit_price": 60000,
+      "total": 60000
+    }
+  ]
+}

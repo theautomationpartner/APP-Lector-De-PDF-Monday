@@ -25,12 +25,28 @@ export const FIELDS = [
 export const COUNTRY_FIELDS = {
   AR: [
     ['ar_tipo_comprobante', 'Argentine voucher type with its letter/code as printed (e.g. "Factura A", "Nota de Crédito B", "Factura C", "FCE MiPyME A"). Comprobante AFIP.'],
+    ['ar_comprobante_asociado', 'ONLY on a Nota de Crédito or Nota de Débito: the invoice it corrects, from the ' +
+      '"Comprobantes Asociados" / "Comprobante Asociado" block. Return ONLY the document number formatted as ' +
+      'PointOfSale(4)-Number(8), e.g. "0032-00002468" — not the type, not the date, not the CUIT. If several ' +
+      'documents are listed, join them with ", ". Return "" on a regular invoice or if the block is not printed.'],
     ['ar_punto_venta',      'Point of sale / punto de venta (usually 4-5 digits, e.g. 0001, 00003). Keep leading zeros — return as text.'],
     ['ar_cae',              'CAE or CAI — the long electronic authorization number (usually 14 digits) near the bottom of the invoice. Labeled "CAE N°", "CAI". Return exactly as printed.'],
     ['ar_cae_vto',          'CAE/CAI expiration date (Fecha de Vto. de CAE / Vencimiento del CAE). Return as YYYY-MM-DD.'],
+    ['ar_periodo_desde',    'Service period start — "Período Facturado Desde" (only printed on service invoices). Return as YYYY-MM-DD. "" if not printed.'],
+    ['ar_periodo_hasta',    'Service period end — "Período Facturado Hasta" (only printed on service invoices). Return as YYYY-MM-DD. "" if not printed.'],
+    ['ar_cotizacion',       'Exchange rate — "Cotización" / "Tipo de cambio", ONLY when the invoice is in a foreign currency (e.g. "1 USD = 1350" -> 1350). Number with a dot decimal. "" if in ARS or not printed.'],
     ['ar_condicion_iva',          'ISSUER / supplier VAT condition — condición frente al IVA del EMISOR (e.g. "Responsable Inscripto", "Monotributo", "IVA Exento").'],
     ['ar_condicion_iva_receptor', 'BUYER / recipient VAT condition — condición frente al IVA del RECEPTOR/cliente (e.g. "Consumidor Final", "Responsable Inscripto", "Monotributo", "Exento", "IVA no alcanzado").'],
-    ['ar_otros_tributos',         'Other taxes total — "Importe Otros Tributos": the sum of perceptions (IIBB/gross income, VAT, income tax) and internal taxes, shown as a line separate from VAT. Numeric value with a dot decimal, NO thousands separator, NO currency symbol. Return "" if the invoice has no such line.'],
+    ['ar_neto_no_gravado',        'Net non-taxable amount — "Neto No Gravado" / "Importe No Gravado" (base NOT subject to VAT), separate from the taxable net (subtotal). Number with a dot decimal, NO thousands separator, NO symbol. "" if not present.'],
+    ['ar_exento',                 'Exempt amount — "Importe Exento" / "Op. Exentas" (VAT-exempt base). Number with a dot decimal. "" if not present.'],
+    ['ar_iva_21',                 'VAT amount at 21% ONLY — the "IVA 21%" line. Number with a dot decimal. "" if there is no 21% line.'],
+    ['ar_iva_105',               'VAT amount at 10.5% ONLY — the "IVA 10,5%" line. Number with a dot decimal. "" if there is no 10.5% line.'],
+    ['ar_iva_27',                 'VAT amount at 27% ONLY — the "IVA 27%" line (typical of utilities/telecom billed to Responsables Inscriptos). Number with a dot decimal. "" if there is no 27% line.'],
+    ['ar_percepcion_iva',         'VAT perception — "Percepción IVA" / "Percep. IVA" (RG 3337 and similar). ONLY the VAT perception. Number with a dot decimal. "" if not present.'],
+    ['ar_percepcion_iibb',        'Gross-income perception — "Percepción IIBB" / "Percep. Ingresos Brutos" (provincial: ARBA, AGIP, etc.). If several jurisdictions, return their SUM. Number with a dot decimal. "" if not present.'],
+    ['ar_percepcion_ganancias',   'Income-tax perception — "Percepción Ganancias" / "Percep. Impuesto a las Ganancias" (RG 830 and similar). Number with a dot decimal. "" if not present.'],
+    ['ar_impuestos_internos',     'Internal taxes — "Impuestos Internos". Number with a dot decimal. "" if not present.'],
+    ['ar_otros_tributos',         'RESIDUAL other taxes — only "Otros Tributos" that are NOT VAT perception, gross-income perception, income-tax perception nor internal taxes (e.g. municipal taxes/perceptions). Never duplicate here an amount already reported in ar_percepcion_* or ar_impuestos_internos. Number with a dot decimal. "" if none.'],
   ],
   CL: [
     ['cl_tipo_dte',           'Chilean DTE type as printed (e.g. "Factura Electrónica", "Factura Exenta Electrónica", "Boleta Electrónica", "Nota de Crédito Electrónica"), with its SII code (33, 34, 39, 61…) if shown.'],
@@ -79,20 +95,115 @@ export const COUNTRY_FIELDS = {
   ],
 }
 
+// ─── REMITOS ─────────────────────────────────────────────────────────────────
+// Un remito NO es una factura sin importes: es otro documento. Se va TODO lo de
+// plata (neto, IVA, percepciones, total) y entra lo de logística y trazabilidad.
+// Definido sobre 192 remitos reales de dos clientes y dos rubros (aberturas y
+// agroquímicos); ver [[remitos-argentina]] en la memoria del proyecto.
+// El único importe que aparece es el "valor declarado", que NO es un precio a
+// pagar sino la base del seguro del flete — por eso su descripción lo aclara.
+const FIELDS_REMITO = [
+  ['document_type',    'Document type as printed — for a delivery note: "Remito", "Remito R", "Nota de Entrega".'],
+  ['invoice_number',   'Delivery-note number, point of sale + number as printed (e.g. "0028-01105914").'],
+  ['issue_date',       'Issue date of the delivery note. Return as YYYY-MM-DD.'],
+  ['supplier_name',    'Issuer / shipper legal or trade name (the party SENDING the goods).'],
+  ['supplier_tax_id',  'Issuer tax identification number, as printed.'],
+  ['supplier_address', 'Issuer address ONLY. Do NOT include any part of the recipient address.'],
+  ['customer_name',    'Recipient / customer name ("Señor(es)", "Cliente", "SR/ES").'],
+  ['customer_tax_id',  'Recipient tax identification number.'],
+  ['customer_address', 'Recipient fiscal address ONLY (their registered address, not necessarily where the goods go).'],
+  ['payment_terms',    'Sale conditions if printed ("Cuenta corriente", "Contado", "CONDICIONES").'],
+]
+
+const COUNTRY_FIELDS_REMITO = {
+  AR: [
+    ['ar_punto_venta',        'Point of sale, 4 or 5 digits AS PRINTED (0028, 00202). Keep leading zeros — return as text.'],
+    ['ar_cae',                'The long authorization code printed at the bottom, usually labelled "C.A.I." on a remito (14 digits). Return exactly as printed. "" if not printed.'],
+    ['ar_cae_vto',            'Expiry of that authorization code ("Fecha de Vto.", "Vto."). Return as YYYY-MM-DD. ONLY if printed — never compute it.'],
+    ['ar_domicilio_entrega',  'DELIVERY address — where the goods are actually dropped off. Labels: "Entregar en", "Domicilio de entrega", "DOM. ENTREGA", "Dirección destino". It is often DIFFERENT from the recipient fiscal address. "" if not printed.'],
+    ['ar_transportista',      'Carrier name — "Transporte", "Transportista", "TPTE.", "Remitido por transporte". "" if not printed.'],
+    ['ar_transportista_cuit', 'Carrier tax ID, when the carrier block prints its own CUIT. "" if not printed.'],
+    ['ar_bultos',             'Number of packages — "Bultos", "Cantidad de Bultos", "Se reciben N bultos". A count, not an amount. "" if not printed.'],
+    ['ar_peso',               'Total weight — "Peso", "Kilos". Number with a dot decimal. "" if not printed.'],
+    ['ar_valor_declarado',    'Declared value — "Valor Declarado", "V. Aprox", "Valor para Flete". ⚠️ This is the insured value for freight, NOT a price to pay and NOT a total: never treat it as an invoice total. Number with a dot decimal. "" if not printed.'],
+    ['ar_orden_compra',       'Purchase-order reference of the BUYER, when the supplier prints it — "Orden de compra", "Pedido N°", "Órdenes de compra de cliente", "N° Pedido". Return exactly as printed. "" if not printed.'],
+    ['ar_comprobante_asociado', 'Invoice this delivery note is linked to, when printed — "Factura Nro.", "Fac. N°". Return the document number as printed. "" if not printed.'],
+    ['ar_cot',                'Código de Operación de Traslado (ARBA) — "N° C.O.T.". Only on some provincial shipments. "" if not printed.'],
+  ],
+}
+
+// Renglones: en una factura interesa la plata; en un remito, QUÉ y CUÁNTO llegó.
+// unidad/lote/vencimiento de partida son trazabilidad obligatoria en agroquímicos.
+export const LINE_FIELDS = {
+  fiscal: [
+    ['description',  'the row description, as printed, concise'],
+    ['quantity',     'quantity'],
+    ['unit_price',   'price per unit'],
+    ['bonificacion', 'the row discount PERCENT if shown, e.g. "10"'],
+    ['subtotal',     'row net amount, before VAT'],
+    ['iva',          'the row VAT RATE percent if shown, e.g. "21"'],
+    ['total',        'row total'],
+  ],
+  remito: [
+    ['description',  'the article / description, as printed'],
+    ['quantity',     'quantity delivered. Watch the separators: "1.000,000" is one thousand and "11,900" is 11.9'],
+    ['unidad',       'unit of measure as printed ("Lts.", "Kgs.", "Unidad", "Mts."). "" if the table has no unit column'],
+    ['codigo',       'the article/product code, when the table has a code column'],
+    ['lote',         'batch / lot number, when printed (agrochemicals, food)'],
+    ['vto_partida',  'batch expiry date, when printed. Return as YYYY-MM-DD'],
+    ['deposito',     'source warehouse, when printed'],
+    ['envases',      'number of containers/packages for the row, when printed'],
+  ],
+}
+
 // Universales + capas de los países configurados (sin duplicar IDs). Orden estable.
-export function fieldsForCountries(countries = []) {
-  const seen = new Set(FIELDS.map(([id]) => id))
+// kind: 'fiscal' (facturas/NC/ND) | 'remito'. Un tablero es de UN tipo.
+export function fieldsForCountries(countries = [], kind = 'fiscal') {
+  const base = kind === 'remito' ? FIELDS_REMITO : FIELDS
+  const capa = kind === 'remito' ? COUNTRY_FIELDS_REMITO : COUNTRY_FIELDS
+  const seen = new Set(base.map(([id]) => id))
   const extra = []
   for (const c of (countries || [])) {
-    for (const f of (COUNTRY_FIELDS[c] || [])) {
+    for (const f of (capa[c] || [])) {
       if (!seen.has(f[0])) { seen.add(f[0]); extra.push(f) }
     }
   }
-  return [...FIELDS, ...extra]
+  return [...base, ...extra]
 }
 
+// Los tipos de documento que sabe leer la app. Un tablero elige uno.
+export const DOC_KINDS = ['fiscal', 'remito']
+
 // Campos que se escriben como número en columnas numéricas de Monday.
-export const NUMERIC_FIELDS = new Set(['subtotal', 'tax_amount', 'total_amount', 'ar_otros_tributos', 'cl_impuesto_adicional', 'cl_monto_exento', 'br_icms', 'br_ipi'])
+export const NUMERIC_FIELDS = new Set(['subtotal', 'tax_amount', 'total_amount',
+  'ar_neto_no_gravado', 'ar_exento', 'ar_iva_21', 'ar_iva_105', 'ar_iva_27',
+  'ar_percepcion_iva', 'ar_percepcion_iibb', 'ar_percepcion_ganancias', 'ar_impuestos_internos', 'ar_otros_tributos',
+  'ar_cotizacion', 'ar_peso', 'ar_valor_declarado', 'ar_bultos', 'cl_impuesto_adicional', 'cl_monto_exento', 'br_icms', 'br_ipi'])
+
+// Campos donde un 0 significa "esta factura NO tiene ese impuesto", no un importe
+// real. El prompt pide devolver vacío, pero el LLM a veces igual manda "0.00" y
+// entonces el tablero muestra un 0 que parece un dato leído: ensucia la contabilidad
+// (ej. "IVA 10,5%: 0" en una factura que solo tiene IVA 21%). Acá lo limpiamos de
+// forma determinística en vez de confiar en el prompt.
+// subtotal y total_amount NO están: ahí un 0 es un error que conviene ver.
+export const ZERO_IS_EMPTY = new Set(['tax_amount',
+  'ar_neto_no_gravado', 'ar_exento', 'ar_iva_21', 'ar_iva_105', 'ar_iva_27',
+  'ar_percepcion_iva', 'ar_percepcion_iibb', 'ar_percepcion_ganancias',
+  'ar_impuestos_internos', 'ar_otros_tributos', 'ar_cotizacion',
+  'cl_impuesto_adicional', 'cl_monto_exento', 'br_icms', 'br_ipi'])
+
+// Pasa a "" los importes que vinieron en 0 pero significan "no aplica".
+// Devuelve la lista de campos limpiados (para loguear).
+export function blankZeros(data) {
+  const cleared = []
+  for (const f of ZERO_IS_EMPTY) {
+    const v = data[f]
+    if (v === undefined || v === null || v === '') continue
+    const n = parseFloat(String(v).replace(/\s/g, '').replace(',', '.'))
+    if (Number.isFinite(n) && n === 0) { data[f] = ''; cleared.push(f) }
+  }
+  return cleared
+}
 
 // Campos que son fechas (Claude ya las devuelve YYYY-MM-DD; se escriben en columnas date).
-export const DATE_FIELDS = new Set(['issue_date', 'due_date', 'ar_cae_vto', 'uy_cae_vto'])
+export const DATE_FIELDS = new Set(['issue_date', 'due_date', 'ar_cae_vto', 'ar_periodo_desde', 'ar_periodo_hasta', 'uy_cae_vto'])

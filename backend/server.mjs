@@ -1,4 +1,6 @@
 import express from 'express'
+import sharp from 'sharp'
+import v8 from 'node:v8'
 import jwt from 'jsonwebtoken'
 import path from 'node:path'
 import { existsSync } from 'node:fs'
@@ -7,13 +9,15 @@ import { config, mondaySecrets } from './config.mjs'
 import { extractInvoice } from './extractor.mjs'
 import {
   getBoardIdFromItem, getLatestFileUrl, getColumnTypes,
-  buildColumnValues, writeColumns, postComment, setStatus, getStatusColumnId,
+  buildColumnValues, writeColumns, postComment, setStatus, getStatusColumnId, getAccountInfo,
   writeLineItemSubitems, renameItem,
 } from './monday.mjs'
-import { runStartupMigrations, getBoardConfig, saveBoardConfig, logExtraction, claimInvoiceKey, releaseInvoiceKey, deleteAccountData, getUsage, setAccountPlan, recentReadCounts, saveLanguage, getInstallationLanguage } from './db.mjs'
+import { saveAccountInfo, runStartupMigrations, getBoardConfig, saveBoardConfig, adoptStatusColumnId, logExtraction, claimInvoiceKey, releaseInvoiceKey, claimSubitems, releaseSubitems, deleteAccountData, getUsage, setAccountPlan, recentReadCounts, saveLanguage, getInstallationLanguage } from './db.mjs'
 import { planFromSubscription } from './plans.mjs'
+import { cuitValido } from './countries/ar.mjs'
 import { syncReading, syncInstallation } from './internal-board.mjs'
 import { t, lifecycleLabels } from './i18n.mjs'
+import { LINE_FIELDS } from './fields.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -124,7 +128,10 @@ function sanitizeConfigBody(body = {}) {
   const mapping = {}
   if (body.mapping && typeof body.mapping === 'object' && !Array.isArray(body.mapping)) {
     for (const [k, v] of Object.entries(body.mapping).slice(0, 100)) {
-      if (typeof v === 'string' && v) mapping[str(k)] = str(v)
+      // '__new__' es un centinela de la UI ("todavía hay que crear esta columna"), no
+      // un columnId. Si se guardara, el pipeline intentaría escribir en una columna que
+      // no existe: gastaría IA y no cargaría nada.
+      if (typeof v === 'string' && v && v !== '__new__') mapping[str(k)] = str(v)
     }
   }
   return {
@@ -133,19 +140,36 @@ function sanitizeConfigBody(body = {}) {
     currencies: isoArr(body.currencies, /^[A-Z]{3}$/),
     language: ['en', 'es'].includes(body.language) ? body.language : 'en',
     fileColumnId: str(body.fileColumnId),
+    // Columna de estado: la elige el usuario en el mapeo. La regla viene prendida
+    // por defecto (solo se apaga si el body lo dice explícitamente).
+    statusColumnId: str(body.statusColumnId),
+    statusEnabled: body.statusEnabled !== false,
+    automationConfirmed: !!body.automationConfirmed,
     dedupEnabled: !!body.dedupEnabled,
     renameItemEnabled: !!body.renameItemEnabled,
     onlyFiscalDocs: !!body.onlyFiscalDocs,
+    // Lista blanca de CUITs: se guardan solo los dígitos (así "30-1234-5" y
+    // "3012345" son lo mismo) y se acota la lista para no guardar cualquier cosa.
+    filterMode: ['all', 'supplier', 'customer'].includes(body.filterMode) ? body.filterMode : 'all',
+    filterTaxIds: (Array.isArray(body.filterTaxIds) ? body.filterTaxIds : [])
+      .map((x) => String(x).replace(/[^0-9A-Za-z]/g, '').slice(0, 20))
+      .filter(Boolean).slice(0, 50),
     ...(() => {
       // Renglones: viven en el MAPEO (como el resto de los campos). Activado se
       // deriva de mapear la descripción al nombre del subítem.
       const src = (body.lineItemsMapping && typeof body.lineItemsMapping === 'object' && !Array.isArray(body.lineItemsMapping)) ? body.lineItemsMapping : {}
       const col = (v) => (typeof v === 'string' ? v.slice(0, 64) : '')
-      const li = {
-        description: src.description === 'name' ? 'name' : '',
-        quantity: col(src.quantity), unit_price: col(src.unit_price), total: col(src.total),
+      // description: 'name' (default, va al nombre del subítem) | columnId | '__auto__'
+      // (crear una columna de texto) | '' (no cargar renglones).
+      // La lista blanca sale de LINE_FIELDS, no de una lista escrita a mano: cuando
+      // se sumaron los remitos, esta lista se quedó con los campos de factura y
+      // tiraba unidad, lote, vencimiento de partida y los demás en CADA guardado.
+      // El tablero se veía mapeado y en la base había dos renglones.
+      const li = {}
+      for (const [id] of [...LINE_FIELDS.fiscal, ...LINE_FIELDS.remito]) {
+        if (!(id in li)) li[id] = col(src[id])
       }
-      return { lineItemsMapping: li, lineItemsEnabled: li.description === 'name' }
+      return { lineItemsMapping: li, lineItemsEnabled: !!li.description }
     })(),
   }
 }
@@ -165,11 +189,17 @@ app.get('/api/config/:boardId', async (req, res) => {
       countries,
       currencies,
       fileColumnId: cfg?.file_column_id || '',
+      statusColumnId: cfg?.status_column_id || '',
+      statusEnabled: cfg?.status_enabled ?? true,
+      automationConfirmed: cfg?.automation_confirmed ?? false,
       language,
       dedupEnabled: cfg?.dedup_enabled ?? false,
       renameItemEnabled: cfg?.rename_item_enabled ?? false,
       onlyFiscalDocs: cfg?.only_fiscal_docs ?? false,
+      filterMode: cfg?.filter_mode || 'all',
+      filterTaxIds: Array.isArray(cfg?.filter_tax_ids) ? cfg.filter_tax_ids : [],
       lineItemsMapping: cfg?.line_items_mapping || {},
+      docKind: cfg?.doc_kind || 'fiscal',
     })
   } catch (e) {
     sendApiError(res, e)
@@ -210,11 +240,53 @@ app.get('/api/usage', async (req, res) => {
 })
 
 // ───────────────────────────────────────────────────────────────────────────
+// COLA DE LECTURAS — cuántas se procesan a la vez.
+//
+// monday dispara la receta una vez POR ÍTEM, todas juntas: si el usuario marca
+// 7 comprobantes, llegan 7 requests en el mismo segundo. El cuello de botella
+// no es la IA, es la RAM (ver config.maxConcurrentExtracts). Sin esta cola el
+// proceso se pasaba de memoria y MORÍA a mitad — y como se va el proceso entero,
+// no hay catch que valga: los ítems quedaban clavados en "Leyendo Comprobante"
+// sin error ni comentario.
+//
+// Las que no entran esperan su turno. No se pierde ninguna y el usuario no se
+// entera de nada, salvo que tardan un poco más.
+//
+// Es una cola EN MEMORIA, a propósito: si el proceso se reinicia se pierde, pero
+// una cola persistente (Redis, tabla en Postgres) es otra pieza que mantener y
+// acá el trabajo dura segundos. Si algún día hay varias instancias del backend,
+// esto hay que repensarlo: el límite es por proceso, no global.
+// ───────────────────────────────────────────────────────────────────────────
+let extractsRunning = 0
+const extractsWaiting = []
+
+function acquireExtractSlot(lang = 'en') {
+  if (extractsRunning < config.maxConcurrentExtracts) {
+    extractsRunning++
+    return Promise.resolve()
+  }
+  if (extractsWaiting.length >= config.maxQueuedExtracts) {
+    return Promise.reject(new UserError(t(lang, 'busy')))
+  }
+  return new Promise((resolve) => extractsWaiting.push(resolve))
+}
+
+function releaseExtractSlot() {
+  const next = extractsWaiting.shift()
+  // Si hay alguien esperando le pasamos el turno directo (el contador no baja:
+  // el cupo cambia de dueño). Si no hay nadie, recién ahí se libera.
+  if (next) next()
+  else extractsRunning--
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // Endpoint de la receta — lee el PDF del item y carga las columnas mapeadas.
 // ───────────────────────────────────────────────────────────────────────────
 app.post('/monday/extract', async (req, res) => {
   let shortLivedToken, accountId, boardId, itemId, statusColId, lang = 'en'
   let claimedKey = null // llave de dedup reclamada por ESTA corrida (para liberarla si falla)
+  let wrote = false     // true = las columnas ya se escribieron (no liberar la llave)
+  let slotHeld = false  // true = esta corrida tiene un cupo de la cola tomado
   try {
     // 1) Auth: JWT firmado con el Signing Secret de la app.
     const auth = req.headers.authorization
@@ -230,6 +302,16 @@ app.post('/monday/extract', async (req, res) => {
     if (!shortLivedToken || !itemId) {
       return res.status(400).json({ error: 'missing shortLivedToken / itemId' })
     }
+    // Nombre/slug de la cuenta: solo lo pedimos si todavía no lo tenemos. Es para
+    // soporte (saber de qué cliente es un tablero y poder abrirlo). No frena nada.
+    void getAccountInfo(shortLivedToken)
+      .then((a) => (a ? saveAccountInfo(accountId, a.name, a.slug) : null))
+      .catch(() => {})
+    // Marca de INICIO. Si el proceso muere a mitad (se pasó de memoria, timeout), el
+    // ítem queda clavado en "Leyendo Comprobante" sin comentario ni error: sin esta
+    // línea no hay forma de saber que la lectura llegó a empezar.
+    console.log(`[extract] START item=${itemId} rss=${Math.round(process.memoryUsage().rss / 1048576)}MB`)
+    console.log('[trigger] inputFields:', JSON.stringify(Object.keys(input)) + ' ' + JSON.stringify(input).slice(0, 300))
     if (!boardId) boardId = await getBoardIdFromItem(shortLivedToken, itemId)
     if (!boardId) throw new UserError(t(lang, 'noBoard', { itemId }))
 
@@ -264,36 +346,126 @@ app.post('/monday/extract', async (req, res) => {
       throw new UserError(t(lang, 'limitReached', { n: acctUsage.limit }))
     }
 
-    // 3) Estado → "leyendo".
-    statusColId = await getStatusColumnId(shortLivedToken, itemId, Object.values(labels))
-    if (statusColId) await setStatus(shortLivedToken, boardId, itemId, statusColId, labels.processing)
+    // 3) Estado → "leyendo". La columna sale del mapeo; si el usuario apagó la
+    // regla, la app no toca ningún estado. Nunca se adivina la columna (ver
+    // getStatusColumnId): antes, con 2+ columnas de estado, escribía en la ajena.
+    if (cfg?.status_enabled !== false) {
+      const st = await getStatusColumnId(shortLivedToken, itemId, cfg?.status_column_id || '', Object.values(labels), boardId)
+      statusColId = st.id
+      // Tablero con una sola columna de estado: la fijamos para que siga siendo la
+      // misma aunque el usuario agregue otra columna de estado más adelante.
+      if (st.adopted) await adoptStatusColumnId(accountId, boardId, st.id).catch(() => {})
+      if (st.ambiguous) {
+        console.warn(`[status] board=${boardId} tiene varias columnas de estado y ninguna elegida — no se escribe el estado`)
+        // Avisamos en el ítem: si no, el usuario ve que la lectura funciona pero el
+        // estado nunca cambia y no sabe por qué. Deja de aparecer cuando la elige.
+        await postComment(shortLivedToken, itemId, t(lang, 'statusAmbiguous')).catch(() => {})
+      }
+      if (statusColId) await setStatus(shortLivedToken, boardId, itemId, statusColId, labels.processing)
+    }
 
     // 4) Validar mapeo y PDF ANTES de gastar crédito de IA.
     if (!Object.values(mapping).filter(Boolean).length) throw new UserError(t(lang, 'noMapping'))
     const file = await getLatestFileUrl(shortLivedToken, itemId, cfg?.file_column_id || '')
     if (!file?.url) throw new UserError(t(lang, 'noPdf'))
 
+    // 4.5) TURNO EN LA COLA. De acá para abajo empieza lo que consume memoria
+    // (bajar el archivo, achicarlo, mandarlo a la IA), así que la espera va justo
+    // acá: las validaciones de arriba son baratas y tienen que fallar rápido sin
+    // ocupar un cupo. El ítem ya quedó en "Leyendo Comprobante", que es la verdad
+    // — está en curso, esperando turno.
+    if (extractsRunning >= config.maxConcurrentExtracts) {
+      console.log(`[cola] item=${itemId} espera turno (${extractsRunning} en curso, ${extractsWaiting.length} en fila)`)
+    }
+    await acquireExtractSlot(lang)
+    slotHeld = true
+
     // 5) Bajar el archivo (PDF o imagen) y leerlo con Claude (con hints país/moneda).
     // Cap de tamaño (Claude acepta hasta ~32MB; y protege la RAM del droplet) +
     // timeout para no quedar colgados en una descarga.
-    const MAX_FILE_BYTES = 30 * 1024 * 1024
+    // El tope es del DROPLET, no de Claude: el archivo entra en memoria como buffer,
+    // como base64 (+33%) y otra vez dentro del cuerpo del request. Un PDF de 30 MB
+    // eran ~110 MB de heap y el proceso moría a mitad de la lectura (OOM real,
+    // 2026-08: el ítem quedaba clavado en "Leyendo" sin error ni comentario).
+    //
+    // 2026-09-10: bajado de 12 a 6 MB. Con 12 el tope dejaba pasar archivos que la
+    // máquina NO puede procesar: un PDF de 9 MB, él solo y sin nada más corriendo,
+    // reventó el heap DURANTE la llamada a la IA (OOM de V8; el guard de tamaño del
+    // QR no lo salva porque el QR se decodifica después). 9 MB en memoria son ~33 MB
+    // entre las tres copias, sobre un rss que ya ronda los 220 MB, contra un heap de
+    // 353 MB.
+    //
+    // Rechazar un archivo es MUCHO más barato que morir: cuando el proceso se cae se
+    // lleva puestas las lecturas EN CURSO DE TODOS LOS DEMÁS CLIENTES. Más vale que
+    // el que sube un escaneo pesado reciba un mensaje claro, a que le corte la
+    // facturación a otro.
+    //
+    // Este número está atado a la RAM del droplet (458 MB). Si se agranda la máquina,
+    // se puede subir — pero medir antes con un archivo real, no estimar.
+    const MAX_FILE_MB = 6
+    const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024
     const fresp = await fetch(file.url, { signal: AbortSignal.timeout(30_000) })
     if (!fresp.ok) throw new UserError(t(lang, 'noPdf'))
     const clen = Number(fresp.headers.get('content-length') || 0)
-    if (clen > MAX_FILE_BYTES) throw new UserError(t(lang, 'fileTooBig', { mb: 30 }))
-    const buf = Buffer.from(await fresp.arrayBuffer())
-    if (buf.length > MAX_FILE_BYTES) throw new UserError(t(lang, 'fileTooBig', { mb: 30 }))
-    const { data, usage, model } = await extractInvoice(
-      buf.toString('base64'),
-      file.mediaType,
+    console.log(`[extract] archivo item=${itemId} tipo=${file.mediaType} tamaño=${clen ? Math.round(clen / 1024) + 'KB' : 'no declarado'}`)
+    if (clen > MAX_FILE_BYTES) throw new UserError(t(lang, 'fileTooBig', { mb: MAX_FILE_MB }))
+    // Descarga con TOPE DURO. Antes hacíamos arrayBuffer() de una: si el servidor no
+    // declaraba content-length, el archivo entero entraba en memoria antes de que
+    // pudiéramos medirlo — y con uno grande el proceso moría ahí mismo, sin dejar
+    // rastro (el ítem quedaba en "Leyendo" para siempre). Ahora cortamos al pasarnos.
+    let buf
+    {
+      const partes = []
+      let bajado = 0
+      for await (const trozo of fresp.body) {
+        bajado += trozo.length
+        if (bajado > MAX_FILE_BYTES) {
+          console.warn(`[extract] archivo cortado: superó ${MAX_FILE_MB}MB item=${itemId}`)
+          throw new UserError(t(lang, 'fileTooBig', { mb: MAX_FILE_MB }))
+        }
+        partes.push(trozo)
+      }
+      buf = Buffer.concat(partes)
+      console.log(`[extract] descargado ${Math.round(buf.length / 1024)}KB item=${itemId} rss=${Math.round(process.memoryUsage().rss / 1048576)}MB`)
+    }
+
+    // FOTOS: se achican antes de mandarlas. Claude reduce las imágenes de su lado a
+    // ~1568 px, así que mandar 4000 px no mejora la lectura — solo gasta memoria y
+    // ancho de banda. Una foto de 8 MB pasa a ~300 KB. El QR se busca sobre el
+    // ORIGINAL (ahí sí hace falta resolución), por eso se achica después.
+    let paraIA = buf
+    if (file.mediaType !== 'application/pdf') {
+      try {
+        const chico = await sharp(buf).rotate()
+          .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 82 }).toBuffer()
+        if (chico.length < buf.length) {
+          console.log(`[extract] foto achicada ${Math.round(buf.length / 1024)}KB -> ${Math.round(chico.length / 1024)}KB item=${itemId}`)
+          paraIA = chico
+        }
+      } catch (e) { console.warn('[extract] no pude achicar la foto:', e.message) }
+    }
+    const b64IA = paraIA.toString('base64')
+    const mediaIA = paraIA === buf ? file.mediaType : 'image/jpeg'
+    const b64Qr = paraIA === buf ? b64IA : buf.toString('base64')
+    const { data, usage, model, warnings } = await extractInvoice(
+      b64IA,
+      mediaIA,
       MODEL,
-      { countries: cfg?.countries || [], lineItems: !!cfg?.line_items_enabled },
+      { countries: cfg?.countries || [], lineItems: !!cfg?.line_items_enabled, qrBase64: b64Qr, qrMediaType: file.mediaType, docKind: cfg?.doc_kind || 'fiscal' },
     )
+    buf = null // liberamos el original apenas no se necesita
 
     // 5.4) FILTRO tipo de documento: si el tablero pidió "solo facturas/NC/ND" y
     // la IA clasificó el documento como "other" (remito, ticket, presupuesto, OC…),
     // NO se carga. Se marca Ignorada + comentario con lo que parecía ser.
-    if (cfg?.only_fiscal_docs && String(data.document_class || '').toLowerCase() === 'other') {
+    // Un tablero de remitos espera "delivery_note"; uno fiscal, factura/NC/ND.
+    // Al revés también: una factura en el tablero de remitos NO se carga.
+    const clase = String(data.document_class || '').toLowerCase()
+    const esperado = (cfg?.doc_kind || 'fiscal') === 'remito'
+      ? clase === 'delivery_note'
+      : ['invoice', 'credit_note', 'debit_note'].includes(clase)
+    if (cfg?.only_fiscal_docs && !esperado) {
       if (statusColId) await setStatus(shortLivedToken, boardId, itemId, statusColId, labels.ignored)
       await postComment(shortLivedToken, itemId, t(lang, 'notFiscalDoc', { type: data.document_type || '?' }))
       await logExtraction({ accountId, boardId, itemId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ignored' })
@@ -301,9 +473,47 @@ app.post('/monday/extract', async (req, res) => {
       return res.status(200).json({ ok: true, ignored: true })
     }
 
-    // 5.5) ANTI-DUPLICADOS (antes de escribir). IDs fiscales normalizados a
-    // alfanumérico-mayúscula para comparar (guiones/puntos/espacios no afectan).
+    // IDs fiscales normalizados (sin guiones/puntos/espacios) para comparar.
     const normId = (s) => String(s || '').replace(/[^a-z0-9]/gi, '').toUpperCase()
+
+    // 5.45) FILTRO por ID fiscal: el tablero puede cargar SOLO las facturas cuyo
+    // receptor (o emisor) esté en una lista blanca de CUITs. Caso típico: un tablero
+    // de compras que solo debe registrar las facturas emitidas A MI empresa; si llega
+    // una de otra razón social, se ignora en vez de ensuciar el tablero.
+    const allowIds = (Array.isArray(cfg?.filter_tax_ids) ? cfg.filter_tax_ids : []).map(normId).filter(Boolean)
+    const filterMode = cfg?.filter_mode || 'all'
+    if (filterMode !== 'all' && allowIds.length) {
+      const subject = filterMode === 'customer' ? data.customer_tax_id : data.supplier_tax_id
+      const sid = normId(subject)
+      // ¿Podemos CONFIAR en lo que leímos? En fotos de tickets térmicos la IA le erra
+      // un dígito al CUIT y cada lectura da uno distinto. Descartar la factura por eso
+      // es lo peor que puede pasar (se pierde el gasto). El dígito verificador nos
+      // deja distinguir "CUIT de otra empresa" de "CUIT ilegible": si no valida, no
+      // filtramos — cargamos la factura y avisamos para que la revisen a mano.
+      const esAR = String(data.detected_country || '').toUpperCase() === 'AR' || (cfg?.countries || []).includes('AR')
+      const ilegible = !sid || (esAR && !cuitValido(sid))
+      // Aun pasando el dígito verificador, la IA puede haber inventado un número
+      // válido por casualidad. Si el leído se PARECE a uno permitido (mismo largo,
+      // hasta 2 dígitos distintos), es un error de lectura, no la factura de otro:
+      // dos empresas distintas no tienen CUIT casi iguales.
+      const cerca = !ilegible && !allowIds.includes(sid)
+        && allowIds.find((a) => a.length === sid.length
+          && [...a].filter((ch, i) => ch !== sid[i]).length <= 2)
+      if (ilegible || cerca) {
+        console.warn(`[filtro] item=${itemId}: no puedo confiar en el ID fiscal leído ("${subject || 'vacío'}")${cerca ? ` (se parece a ${cerca})` : ''} — cargo igual y aviso`)
+        warnings.push(cerca
+          ? { key: 'warnFilterClose', vars: { id: subject || '', esperado: cerca } }
+          : { key: 'warnFilterUnreadable', vars: { id: subject || '' } })
+      } else if (!allowIds.includes(sid)) {
+        if (statusColId) await setStatus(shortLivedToken, boardId, itemId, statusColId, labels.ignored)
+        await postComment(shortLivedToken, itemId, t(lang, 'ignored', { taxid: subject || '' }))
+        await logExtraction({ accountId, boardId, itemId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ignored' })
+        console.log(`[extract] IGNORADA (${filterMode} "${subject}" fuera de la lista) item=${itemId}`)
+        return res.status(200).json({ ok: true, ignored: true })
+      }
+    }
+
+    // 5.5) ANTI-DUPLICADOS (antes de escribir).
     // Llave = ID fiscal emisor + número + tipo (normalizados). Se reclama ATÓMICA-
     // MENTE (insert-first): dos triggers simultáneos con la misma factura no pueden
     // pasar los dos — solo uno inserta, el otro ve al dueño. Se registra siempre
@@ -328,20 +538,44 @@ app.post('/monday/extract', async (req, res) => {
       }
     }
 
+    // 5.9) IDs fiscales SIEMPRE sin puntuación: "30-52333600-9" → "30523336009".
+    // Es lo que necesitan los sistemas contables/ERP para cruzar, y tener las dos
+    // formas conviviendo entre tableros ensuciaba más de lo que ayudaba.
+    // Va DESPUÉS del filtro y del dedup (ambos comparan normalizado, no les afecta).
+    for (const f of ['supplier_tax_id', 'customer_tax_id']) {
+      if (data[f]) data[f] = String(data[f]).replace(/[^0-9A-Za-z]/g, '')
+    }
+
     // 6) Escribir en las columnas mapeadas (según su tipo).
     const colTypes = await getColumnTypes(shortLivedToken, boardId)
     const cv = buildColumnValues(mapping, data, colTypes)
     await writeColumns(shortLivedToken, boardId, itemId, cv)
+    // Punto de no retorno: la factura YA quedó cargada. Si algo falla más adelante
+    // (comentario, subítems, renombre), NO hay que liberar la llave de duplicados:
+    // si se liberara, volver a subir la misma factura la cargaría de nuevo.
+    wrote = true
 
     // 6.5) Renglones → subítems (si el tablero lo activó). Best-effort: si falla,
     // las columnas ya quedaron escritas — se loguea y se sigue.
     let subitemsCreated = 0
     if (cfg?.line_items_enabled && Array.isArray(data.line_items) && data.line_items.length) {
-      try {
-        const r = await writeLineItemSubitems(shortLivedToken, itemId, data.line_items, lang, cfg?.line_items_mapping || {})
-        subitemsCreated = r.created
-        if (r.skipped) console.log(`[extract] subitems salteados (el item ya tenía) item=${itemId}`)
-      } catch (e) { console.warn('[extract] subitems fallaron:', e.message) }
+      // Reclamo ATÓMICO antes de crear: dos disparos simultáneos del mismo ítem no
+      // pueden crear los renglones los dos (antes se duplicaban). Si el reclamo no
+      // es nuestro, otra corrida los está creando → no tocamos nada.
+      const owns = await claimSubitems(accountId, itemId).catch(() => true)
+      if (!owns) {
+        console.log(`[extract] subitems salteados (otra corrida los está creando) item=${itemId}`)
+      } else {
+        try {
+          const r = await writeLineItemSubitems(shortLivedToken, itemId, data.line_items, lang, cfg?.line_items_mapping || {})
+          subitemsCreated = r.created
+          if (r.skipped) console.log(`[extract] subitems salteados (el item ya tenía) item=${itemId}`)
+        } catch (e) {
+          // Falló: soltamos el reclamo para que un reintento pueda crearlos.
+          await releaseSubitems(accountId, itemId).catch(() => {})
+          console.warn('[extract] subitems fallaron:', e.message)
+        }
+      }
     }
 
     // 6.6) Renombrar el ítem (si la regla está activa) al formato estándar
@@ -363,6 +597,9 @@ app.post('/monday/extract', async (req, res) => {
       .filter(([f, c]) => c && (data[f] || '').toString().trim())
       .map(([f]) => `• ${f}: ${data[f]}`)
     if (subitemsCreated > 0) loaded.push(t(lang, 'subitemsLoaded', { n: subitemsCreated }))
+    // Controles que no cerraron (CAE con largo raro, desglose que no suma): van en
+    // el mismo comentario. Antes solo quedaban en el log y el usuario no se enteraba.
+    for (const w of (warnings || [])) loaded.push(t(lang, w.key, w.vars))
     await postComment(shortLivedToken, itemId, t(lang, 'loaded', { model, n: Object.keys(cv).length }) + '\n' + loaded.join('\n'))
 
     // 8) Histórico + tablero interno de ops (fire-and-forget, no frena la respuesta).
@@ -379,7 +616,7 @@ app.post('/monday/extract', async (req, res) => {
     console.error('[extract] error:', e.message)
     // Si ESTA corrida reclamó la llave de dedup y después falló, la liberamos:
     // la factura no quedó cargada, no debe quedar "reservada" como duplicado.
-    if (claimedKey) await releaseInvoiceKey(accountId, boardId, claimedKey, itemId).catch(() => {})
+    if (claimedKey && !wrote) await releaseInvoiceKey(accountId, boardId, claimedKey, itemId).catch(() => {})
     // Al usuario solo le mostramos errores "esperables" (UserError, ya traducidos);
     // los internos (DB, APIs) van al log y al board le llega un mensaje genérico.
     const userMsg = e instanceof UserError ? e.message : t(lang, 'internalError')
@@ -395,6 +632,11 @@ app.post('/monday/extract', async (req, res) => {
       }
     } catch { /* noop */ }
     res.status(200).json({ ok: false, error: userMsg })
+  } finally {
+    // Liberar el cupo SIEMPRE, haya salido bien o mal. Si esto no corre, el cupo
+    // queda tomado para siempre y la cola se traba sola de a poco hasta frenar
+    // todas las lecturas. Va en finally y no al final del try justamente por eso.
+    if (slotHeld) releaseExtractSlot()
   }
 })
 
@@ -488,6 +730,10 @@ if (existsSync(PUBLIC_DIR)) {
 // ───────────────────────────────────────────────────────────────────────────
 // Bind SOLO a localhost: el único camino de entrada es nginx (que sí escucha
 // afuera). Evita que alguien le pegue directo al puerto 8080 salteando el proxy.
+// Límite REAL de heap. Node lo calcula según la RAM de la máquina si no se le pasa
+// --max-old-space-size; en este droplet eso da ~256 MB y las facturas pesadas morían
+// ahí. Lo logueamos para que no haya que deducirlo nunca más.
+console.log(`[config] heap máximo = ${Math.round(v8.getHeapStatistics().heap_size_limit / 1048576)} MB`)
 runStartupMigrations()
   .catch((e) => console.error('[db] migración falló:', e.message))
   .finally(() => app.listen(PORT, '127.0.0.1', () => console.log(`Lector PDF IA backend escuchando en 127.0.0.1:${PORT}`)))

@@ -1,0 +1,42 @@
+{
+  "document_type": "Factura A",
+  "document_class": "invoice",
+  "invoice_number": "00032-00002468",
+  "issue_date": "2026-07-30",
+  "currency": "ARS",
+  "supplier_name": "DISTRIBUIDORA DEMO S.A.",
+  "supplier_tax_id": "30-12345678-1",
+  "customer_name": "FERRETERÍA INDUSTRIAL S.A.",
+  "customer_tax_id": "30-99887766-7",
+  "subtotal": 160000,
+  "tax_amount": 33600,
+  "total_amount": 196960,
+  "ar_tipo_comprobante": "Factura A",
+  "ar_comprobante_asociado": "",
+  "ar_punto_venta": "00032",
+  "ar_cae": "86316000002468",
+  "ar_cae_vto": "2026-08-09",
+  "ar_condicion_iva": "Responsable Inscripto",
+  "ar_condicion_iva_receptor": "Responsable Inscripto",
+  "ar_neto_no_gravado": "",
+  "ar_exento": "",
+  "ar_iva_21": 33600,
+  "ar_iva_105": "",
+  "ar_iva_27": "",
+  "ar_percepcion_iva": "",
+  "ar_percepcion_iibb": 3360,
+  "ar_percepcion_ganancias": "",
+  "ar_impuestos_internos": "",
+  "ar_otros_tributos": "",
+  "ar_periodo_desde": "",
+  "ar_periodo_hasta": "",
+  "ar_cotizacion": "",
+  "line_items": [
+    {
+      "description": "Chapa galvanizada",
+      "quantity": 200,
+      "unit_price": 800,
+      "total": 160000
+    }
+  ]
+}

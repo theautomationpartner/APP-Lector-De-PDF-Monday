@@ -29,6 +29,19 @@ export const config = {
   guardSameItem: Number(process.env.GUARD_SAME_ITEM ?? 8),    // mismo item en 15 min
   guardPerHour:  Number(process.env.GUARD_PER_HOUR  ?? 600),  // lecturas/cuenta en 60 min
 
+  // Cuántas lecturas se procesan A LA VEZ. El límite NO es la IA (aguanta de
+  // sobra): es la RAM del droplet. Cada archivo vive en memoria como buffer,
+  // como base64 (+33%) y otra vez dentro del cuerpo del request — así que N
+  // lecturas en paralelo son ~N veces ese pico. Con 458 MB de RAM, disparar 7
+  // ítems juntos mataba el proceso a mitad y los dejaba clavados en "Leyendo
+  // Comprobante" (caso real 2026-09-10: 7 archivos, 22 MB en total, 13 reinicios).
+  // Las que no entran ESPERAN su turno, no se pierden.
+  maxConcurrentExtracts: Number(process.env.MAX_CONCURRENT_EXTRACTS ?? 2),
+  // Tope de la fila de espera. Protege de que una ráfaga enorme acumule cientos
+  // de requests abiertos. Al pasarse, la lectura falla con mensaje claro en vez
+  // de colgarse para siempre.
+  maxQueuedExtracts: Number(process.env.MAX_QUEUED_EXTRACTS ?? 40),
+
   // ── Secretos (solo se leen acá) ──
   databaseUrl: readEnv('DATABASE_URL', { secret: true }),
   anthropicApiKey: readEnv('ANTHROPIC_API_KEY', { secret: true }),

@@ -1,0 +1,54 @@
+{
+  "document_type": "Factura A",
+  "document_class": "invoice",
+  "invoice_number": "00003-00000055",
+  "issue_date": "2026-07-01",
+  "currency": "ARS",
+  "supplier_name": "DISTRIBUIDORA DEMO S.A.",
+  "supplier_tax_id": "30-12345678-1",
+  "customer_name": "FERRETERÍA INDUSTRIAL S.A.",
+  "customer_tax_id": "30-99887766-7",
+  "subtotal": 170000,
+  "tax_amount": 31650,
+  "total_amount": 201650,
+  "ar_tipo_comprobante": "Factura A",
+  "ar_comprobante_asociado": "",
+  "ar_punto_venta": "00003",
+  "ar_cae": "75210000000055",
+  "ar_cae_vto": "2026-07-11",
+  "ar_condicion_iva": "Responsable Inscripto",
+  "ar_condicion_iva_receptor": "Responsable Inscripto",
+  "ar_neto_no_gravado": "",
+  "ar_exento": "",
+  "ar_iva_21": 21000,
+  "ar_iva_105": 5250,
+  "ar_iva_27": 5400,
+  "ar_percepcion_iva": "",
+  "ar_percepcion_iibb": "",
+  "ar_percepcion_ganancias": "",
+  "ar_impuestos_internos": "",
+  "ar_otros_tributos": "",
+  "ar_periodo_desde": "",
+  "ar_periodo_hasta": "",
+  "ar_cotizacion": "",
+  "line_items": [
+    {
+      "description": "Servicio de flete",
+      "quantity": 1,
+      "unit_price": 100000,
+      "total": 100000
+    },
+    {
+      "description": "Alimento balanceado (reducido)",
+      "quantity": 100,
+      "unit_price": 500,
+      "total": 50000
+    },
+    {
+      "description": "Energía (27%)",
+      "quantity": 1,
+      "unit_price": 20000,
+      "total": 20000
+    }
+  ]
+}

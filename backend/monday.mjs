@@ -151,19 +151,70 @@ export async function renameItem(token, boardId, itemId, name) {
   await gql(token, m, { b: String(boardId), i: String(itemId), cv: JSON.stringify({ name: n }) })
 }
 
+// Nombre y slug de la cuenta dueña del tablero. Sirve para soporte: sin esto solo
+// tenemos el ID numérico y no se puede ni armar el link al tablero del cliente
+// (https://<slug>.monday.com/boards/<id>). Best-effort: si falla, devuelve null.
+export async function getAccountInfo(token) {
+  try {
+    const d = await gql(token, 'query { me { account { id name slug } } }')
+    const a = d?.me?.account
+    return a?.id ? { id: String(a.id), name: a.name || '', slug: a.slug || '' } : null
+  } catch (e) {
+    console.warn('[account] no se pudo leer la cuenta:', e.message)
+    return null
+  }
+}
+
 // Deja un comentario en el item con lo que se cargó.
 export async function postComment(token, itemId, body) {
   const m = `mutation ($i: ID!, $b: String!) { create_update(item_id: $i, body: $b) { id } }`
   await gql(token, m, { i: String(itemId), b: body })
 }
 
-// Encuentra la columna de estado del item (preferentemente la que disparó la receta).
-export async function getStatusColumnId(token, itemId, preferredLabels = []) {
+// Resuelve la columna de estado donde la app escribe leyendo / leído / error.
+//
+// REGLA DE ORO: NUNCA adivinar. Antes esto caía a `cols[0]` (la primera columna de
+// estado del ítem) y si el usuario agregaba una columna propia, la app le escribía
+// encima y le creaba nuestras etiquetas adentro (bug reportado 2026-08).
+//
+// Orden: 1) la elegida en el mapeo → 2) si el tablero tiene UNA sola columna de
+// estado, esa (no hay nada que adivinar) → 3) ambiguo: no se escribe.
+// Devuelve { id, adopted } — adopted = se resolvió por (2) y conviene fijarla.
+export async function getStatusColumnId(token, itemId, configuredId = '', ourLabels = [], boardId = null) {
   const d = await gql(token, `query { items(ids: [${Number(itemId)}]) { column_values { id type text } } }`)
   const cols = (d?.items?.[0]?.column_values || []).filter((c) => c.type === 'status' || c.type === 'color')
-  if (!cols.length) return null
-  const preferred = cols.find((c) => preferredLabels.includes((c.text || '').trim()))
-  return (preferred || cols[0]).id
+  if (!cols.length) return { id: null, adopted: false }
+  // 1) La elegida por el usuario. Si la eligió y ya NO existe (la borró), no caemos a
+  //    otra: sería volver a escribir en una columna que no eligió. Mejor no escribir.
+  if (configuredId) {
+    return cols.some((c) => c.id === configuredId)
+      ? { id: configuredId, adopted: false }
+      : { id: null, adopted: false, ambiguous: true }
+  }
+  // 2) Una sola columna de estado = no hay ambigüedad posible.
+  if (cols.length === 1) return { id: cols[0].id, adopted: true }
+  // 3) Varias, ninguna elegida: si UNA ya tiene puesta una etiqueta NUESTRA, es esa.
+  const conNuestroTexto = cols.filter((c) => ourLabels.includes(String(c.text || '').trim()))
+  if (conNuestroTexto.length === 1) return { id: conNuestroTexto[0].id, adopted: true }
+  // 4) Si no, miramos las etiquetas DEFINIDAS en cada columna (no el valor de este
+  //    ítem). La columna que tiene "Leyendo Comprobante"/"Comprobante Leído" entre sus
+  //    opciones es la nuestra, aunque este ítem esté en otro valor. Sin esto, un
+  //    tablero con 2 columnas de estado dejaba de escribir el estado en los ítems
+  //    nuevos y quedaban trabados en "Leyendo" (caso real, 2026-08).
+  if (boardId) {
+    try {
+      const b = await gql(token, `query { boards(ids: [${Number(boardId)}]) { columns { id type settings_str } } }`)
+      const ids = new Set(cols.map((c) => c.id))
+      const nuestras = (b?.boards?.[0]?.columns || []).filter((c) => {
+        if (!ids.has(c.id)) return false
+        const labels = Object.values(JSON.parse(c.settings_str || '{}').labels || {}).map((x) => String(x).trim())
+        return ourLabels.some((l) => labels.includes(l))
+      })
+      if (nuestras.length === 1) return { id: nuestras[0].id, adopted: true }
+    } catch { /* si falla, seguimos al caso ambiguo */ }
+  }
+  // 5) Genuinamente ambiguo: no tocamos nada.
+  return { id: null, adopted: false, ambiguous: true }
 }
 
 // Setea una etiqueta en una columna de estado (la crea si no existe).
@@ -179,24 +230,45 @@ export async function setStatus(token, boardId, itemId, columnId, label) {
 // Crea un subítem por renglón de la factura: el NOMBRE es la descripción y las
 // columnas Cantidad / Precio unitario / Total van en el tablero de subítems
 // (se crean por título si faltan, según el idioma del tablero).
+// Las claves son los campos del renglón TAL COMO viajan en el mapeo. Antes eran
+// abreviaturas propias (qty, unit…) y solo existían las de factura: un renglón de
+// remito nunca escribía unidad, lote ni vencimiento de partida, mapeado o no.
 const SUBITEM_COL_TITLES = {
-  en: { qty: 'Qty', unit: 'Unit price', total: 'Total' },
-  es: { qty: 'Cantidad', unit: 'Precio unitario', total: 'Total' },
+  en: {
+    description: 'Description', quantity: 'Qty', unit_price: 'Unit price', bonificacion: 'Discount %',
+    subtotal: 'Subtotal', iva: 'VAT %', total: 'Total',
+    unidad: 'Unit of measure', codigo: 'Item code', lote: 'Batch / lot',
+    vto_partida: 'Batch expiry', deposito: 'Warehouse', envases: 'Containers',
+  },
+  es: {
+    description: 'Descripción', quantity: 'Cantidad', unit_price: 'Precio unitario', bonificacion: 'Bonificación %',
+    subtotal: 'Subtotal', iva: 'IVA %', total: 'Total',
+    unidad: 'Unidad de medida', codigo: 'Código de artículo', lote: 'Lote',
+    vto_partida: 'Vencimiento de partida', deposito: 'Depósito', envases: 'Envases',
+  },
 }
+// Importes y conteos son números, el vencimiento de partida es fecha, el resto texto.
+const LI_NUM = new Set(['quantity', 'unit_price', 'bonificacion', 'subtotal', 'iva', 'total', 'envases'])
+const LI_DATE = new Set(['vto_partida'])
+const liTipo = (f) => (LI_DATE.has(f) ? 'date' : LI_NUM.has(f) ? 'numbers' : 'text')
+// Nombre del subítem cuando la descripción va a una columna propia: el usuario
+// quiere el Name libre para su nomenclatura, así que ponemos algo neutro.
+const LINE_WORD = { en: 'Line', es: 'Renglón' }
 
-// Busca (o crea) por título las columnas numéricas pedidas del tablero de
-// subítems. keys ⊆ ['qty','unit','total']. Devuelve { key: columnId }.
+// Busca (o crea) por título las columnas pedidas del tablero de subítems.
+// keys = campos del renglón ('quantity', 'lote'…). Devuelve { campo: columnId }.
 async function ensureSubitemCols(token, subBoardId, lang, keys) {
   const titles = SUBITEM_COL_TITLES[lang] || SUBITEM_COL_TITLES.en
   const d = await gql(token, `query { boards(ids: [${Number(subBoardId)}]) { columns { id title type } } }`)
   const existing = d?.boards?.[0]?.columns || []
   const ids = {}
   for (const key of keys) {
+    if (!titles[key]) continue
     const found = existing.find((c) => c.title.toLowerCase() === titles[key].toLowerCase())
     if (found) { ids[key] = found.id; continue }
     const r = await gql(token,
-      `mutation ($b: ID!, $t: String!) { create_column(board_id: $b, title: $t, column_type: numbers) { id } }`,
-      { b: String(subBoardId), t: titles[key] })
+      `mutation ($b: ID!, $t: String!, $y: ColumnType!) { create_column(board_id: $b, title: $t, column_type: $y) { id } }`,
+      { b: String(subBoardId), t: titles[key], y: liTipo(key) })
     ids[key] = r.create_column.id
   }
   return ids
@@ -209,19 +281,40 @@ async function ensureSubitemCols(token, subBoardId, lang, keys) {
 export async function writeLineItemSubitems(token, itemId, lines, lang = 'en', liMap = {}) {
   const items = (Array.isArray(lines) ? lines : []).filter((l) => (l?.description || '').trim()).slice(0, 50)
   if (!items.length) return { created: 0, skipped: false }
-  const pre = await gql(token, `query { items(ids: [${Number(itemId)}]) { subitems { id } } }`)
-  if ((pre?.items?.[0]?.subitems || []).length) return { created: 0, skipped: true }
-
   // Destino de cada métrica según el mapeo ('' = el usuario no la mapeó → no se carga).
-  const want = { qty: liMap.quantity || '', unit: liMap.unit_price || '', total: liMap.total || '' }
+  // description = 'name' (default) pone la descripción en el NOMBRE del subítem; si
+  // apunta a una columna, el nombre queda neutro ("Renglón 1") para que el usuario
+  // use el Name con su propia nomenclatura, y la descripción va a esa columna.
+  const descCol = liMap.description && liMap.description !== 'name' ? liMap.description : ''
+  const word = LINE_WORD[lang] || LINE_WORD.en
+  const nombreDe = (ln, idx) => (descCol ? `${word} ${idx + 1}` : String(ln.description).trim().slice(0, 255))
+
+  // Qué renglones faltan. Comparamos POR NOMBRE, no por cantidad: si el ítem tiene un
+  // subítem ajeno (uno que puso el usuario, o basura de otro proceso), contar habría
+  // corrido la numeración y se habría salteado el primer renglón real.
+  // Esto también permite completar una corrida que se cortó a mitad.
+  const pre = await gql(token, `query { items(ids: [${Number(itemId)}]) { subitems { id name } } }`)
+  const yaEstan = new Set((pre?.items?.[0]?.subitems || []).map((s) => String(s.name || '').trim()))
+  const faltan = items.map((ln, idx) => [idx, ln]).filter(([idx, ln]) => !yaEstan.has(nombreDe(ln, idx)))
+  if (!faltan.length) return { created: 0, skipped: true }
+  if (yaEstan.size) console.warn(`[subitems] item=${itemId}: ${faltan.length} de ${items.length} renglones faltantes (el ítem ya tenía ${yaEstan.size} subítem(s))`)
+
+  // Todo lo que el usuario mapeó, sea de factura o de remito. 'description' aparte:
+  // su destino por defecto es el NOMBRE del subítem, no una columna.
+  const want = { description: descCol }
+  for (const f of Object.keys(SUBITEM_COL_TITLES.es)) {
+    if (f === 'description') continue
+    want[f] = liMap[f] || ''
+  }
   const autoKeys = Object.entries(want).filter(([, v]) => v === '__auto__').map(([k]) => k)
   let subBoardId = null, autoCols = {}, created = 0
-  for (const ln of items) {
+  // Solo los que faltan, cada uno con su índice ORIGINAL (así "Renglón 7" sigue siendo el 7).
+  for (const [idx, ln] of faltan) {
     // create_subitem crea la columna "Subitems" en el tablero padre si no existe;
     // la respuesta trae el board del subítem (recién ahí conocemos su id).
     const r = await gql(token,
       `mutation ($p: ID!, $n: String!) { create_subitem(parent_item_id: $p, item_name: $n) { id board { id } } }`,
-      { p: String(itemId), n: String(ln.description).trim().slice(0, 255) })
+      { p: String(itemId), n: nombreDe(ln, idx) })
     const subId = r?.create_subitem?.id
     if (!subId) continue
     if (!subBoardId) {
@@ -230,9 +323,17 @@ export async function writeLineItemSubitems(token, itemId, lines, lang = 'en', l
     }
     const colOf = (k) => (want[k] === '__auto__' ? autoCols[k] : want[k]) || null
     const cv = {}
-    const q = toNumber(ln.quantity);   const qc = colOf('qty');   if (q != null && qc) cv[qc] = String(q)
-    const u = toNumber(ln.unit_price); const uc = colOf('unit');  if (u != null && uc) cv[uc] = String(u)
-    const t = toNumber(ln.total);      const tc = colOf('total'); if (t != null && tc) cv[tc] = String(t)
+    const dc = colOf('description'); if (dc) cv[dc] = String(ln.description).trim().slice(0, 255)
+    for (const f of Object.keys(want)) {
+      if (f === 'description') continue
+      const col = colOf(f); if (!col) continue
+      const crudo = ln[f]
+      if (crudo == null || String(crudo).trim() === '') continue
+      if (LI_NUM.has(f)) { const n = toNumber(crudo); if (n != null) cv[col] = String(n); continue }
+      // Fecha: monday la quiere como objeto y solo acepta AAAA-MM-DD.
+      if (LI_DATE.has(f)) { const d = String(crudo).trim(); if (/^\d{4}-\d{2}-\d{2}$/.test(d)) cv[col] = { date: d }; continue }
+      cv[col] = String(crudo).trim().slice(0, 255)
+    }
     if (Object.keys(cv).length && subBoardId) {
       await gql(token,
         `mutation ($b: ID!, $i: ID!, $cv: JSON!) { change_multiple_column_values(board_id: $b, item_id: $i, column_values: $cv) { id } }`,

@@ -55,7 +55,7 @@ async function gqlOps(q, variables = {}) {
 // evento de install llega antes de la primera config (queda con defaults).
 async function ensureClientItem(accountId) {
   const { rows } = await query(
-    'select board_item_id, plan, default_country, created_at from installations where account_id = $1',
+    'select board_item_id, plan, default_country, created_at, account_name from installations where account_id = $1',
     [String(accountId)],
   )
   const inst = rows[0]
@@ -69,7 +69,9 @@ async function ensureClientItem(accountId) {
   }
   const d = await gqlOps(
     `mutation($b:ID!,$n:String!,$cv:JSON!){ create_item(board_id:$b,item_name:$n,column_values:$cv,create_labels_if_missing:true){ id } }`,
-    { b: B1, n: `Cuenta ${accountId}`, cv: JSON.stringify(cv) },
+    // Nombre real de la cuenta si ya lo capturamos; si no, el ID (se renombra solo
+    // la próxima vez que se cree, y para las existentes hay un backfill).
+    { b: B1, n: inst?.account_name || `Cuenta ${accountId}`, cv: JSON.stringify(cv) },
   )
   const itemId = d.create_item.id
   await query(

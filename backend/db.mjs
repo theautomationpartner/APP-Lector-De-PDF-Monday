@@ -1,4 +1,5 @@
 // db.mjs — Pool de PostgreSQL + migraciones + helpers de config/histórico.
+import { fieldsForCountries } from './fields.mjs'
 import pg from 'pg'
 import { readFileSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -40,18 +41,46 @@ export const query = (text, params) => pool.query(text, params)
 export async function runStartupMigrations() {
   const sql = readFileSync(join(__dirname, 'db', 'schema.sql'), 'utf8')
   await pool.query(sql)
+  // Los reclamos de subítems viven 10 minutos por diseño: los viejos son basura y
+  // además guardan IDs de ítems del cliente. Se purgan en cada arranque.
+  await pool.query("delete from subitem_claims where created_at < now() - interval '1 day'").catch(() => {})
   console.log('[db] migraciones OK')
 }
 
 // ── Config por (cuenta, tablero) ──
 export async function getBoardConfig(accountId, boardId) {
   const { rows } = await pool.query(
-    `select mapping, status_column_id, file_column_id, country_override, currency_override, ui_language,
-            dedup_enabled, line_items_enabled, line_items_mapping, rename_item_enabled, only_fiscal_docs, filter_mode, filter_tax_ids, countries, currencies
+    `select mapping, status_column_id, status_enabled, tax_ids_plain, automation_confirmed, file_column_id, country_override, currency_override, ui_language,
+            dedup_enabled, line_items_enabled, line_items_mapping, rename_item_enabled, only_fiscal_docs, filter_mode, filter_tax_ids, countries, currencies,
+            doc_kind
        from board_configs where account_id = $1 and board_id = $2`,
     [accountId, boardId],
   )
   return rows[0] || null
+}
+
+// El tipo de documento tiene que ser COHERENTE con el mapeo que llega. Si el
+// mapeo trae campos que solo existen en remitos (domicilio de entrega, bultos,
+// C.O.T.), el tablero es de remitos, diga lo que diga el docKind.
+//
+// Esto no debería hacer falta: lo manda el frontend. Pero una pestaña vieja abierta
+// puede guardar con el tipo desactualizado y dejar la fila contradictoria — pasó de
+// verdad: doc_kind "fiscal" con 22 campos de remito adentro. Un dato que se
+// contradice a sí mismo es peor que uno que falta, porque nadie lo mira.
+const SOLO_REMITO = new Set(
+  fieldsForCountries(['AR'], 'remito').map(([id]) => id)
+    .filter((id) => !fieldsForCountries(['AR'], 'fiscal').some(([f]) => f === id)),
+)
+function tipoCoherente(docKind, mapping) {
+  const pedido = docKind === 'remito' ? 'remito' : 'fiscal'
+  const campos = Object.keys(mapping || {})
+  if (!campos.length) return pedido
+  const deRemito = campos.filter((f) => SOLO_REMITO.has(f)).length
+  if (pedido === 'fiscal' && deRemito >= 2) {
+    console.warn(`[config] llegó doc_kind="fiscal" con ${deRemito} campos que solo existen en remitos — se guarda como "remito"`)
+    return 'remito'
+  }
+  return pedido
 }
 
 export async function saveBoardConfig(accountId, boardId, cfg = {}) {
@@ -60,6 +89,8 @@ export async function saveBoardConfig(accountId, boardId, cfg = {}) {
     countries = [], currencies = [],
     dedupEnabled = false, lineItemsEnabled = false, lineItemsMapping = {},
     renameItemEnabled = false, onlyFiscalDocs = false, filterMode = 'all', filterTaxIds = [],
+    statusColumnId = null, statusEnabled = true, taxIdsPlain = false, automationConfirmed = false,
+    docKind = 'fiscal',
   } = cfg
   const cleanArr = (a) => (Array.isArray(a) ? a : []).map((s) => String(s).trim()).filter(Boolean)
   const countriesC = cleanArr(countries)
@@ -71,16 +102,19 @@ export async function saveBoardConfig(accountId, boardId, cfg = {}) {
   await pool.query(
     `insert into board_configs
        (account_id, board_id, mapping, country_override, currency_override, ui_language,
-        dedup_enabled, line_items_enabled, line_items_mapping, rename_item_enabled, only_fiscal_docs, filter_mode, filter_tax_ids, countries, currencies, file_column_id, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, now())
+        dedup_enabled, line_items_enabled, line_items_mapping, rename_item_enabled, only_fiscal_docs, filter_mode, filter_tax_ids, countries, currencies, file_column_id, status_column_id, status_enabled, tax_ids_plain, automation_confirmed, doc_kind, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, now())
      on conflict (account_id, board_id) do update set
        mapping = $3, country_override = $4, currency_override = $5, ui_language = $6,
        dedup_enabled = $7, line_items_enabled = $8, line_items_mapping = $9, rename_item_enabled = $10,
-       only_fiscal_docs = $11, filter_mode = $12, filter_tax_ids = $13, countries = $14, currencies = $15, file_column_id = $16, updated_at = now()`,
+       only_fiscal_docs = $11, filter_mode = $12, filter_tax_ids = $13, countries = $14, currencies = $15, file_column_id = $16,
+       status_column_id = $17, status_enabled = $18, tax_ids_plain = $19, automation_confirmed = $20, doc_kind = $21, updated_at = now()`,
     [accountId, boardId, JSON.stringify(mapping), countryO, currencyO, language,
       !!dedupEnabled, !!lineItemsEnabled, JSON.stringify(lineItemsMapping || {}), !!renameItemEnabled,
       !!onlyFiscalDocs, filterMode || 'all', JSON.stringify(cleanTaxIds),
-      JSON.stringify(countriesC), JSON.stringify(currenciesC), fileColumnId || null],
+      JSON.stringify(countriesC), JSON.stringify(currenciesC), fileColumnId || null,
+      statusColumnId || null, statusEnabled !== false, !!taxIdsPlain, !!automationConfirmed,
+      tipoCoherente(docKind, mapping)],
   )
   // upsert de la instalación (defaults a nivel cuenta)
   await pool.query(
@@ -93,6 +127,42 @@ export async function saveBoardConfig(accountId, boardId, cfg = {}) {
        updated_at = now()`,
     [accountId, language, countryO, currencyO],
   )
+}
+
+// Fija la columna de estado la PRIMERA vez que se pudo resolver sin ambigüedad
+// (tablero con una sola columna de estado). Así, si el usuario agrega otra columna
+// de estado más adelante, el tablero sigue escribiendo en la de siempre en vez de
+// volverse ambiguo. No pisa una elección explícita del usuario.
+export async function adoptStatusColumnId(accountId, boardId, columnId) {
+  if (!columnId) return
+  await pool.query(
+    `update board_configs set status_column_id = $3, updated_at = now()
+      where account_id = $1 and board_id = $2 and coalesce(status_column_id, '') = ''`,
+    [accountId, boardId, String(columnId)],
+  )
+}
+
+// Guarda el nombre/slug de la cuenta la primera vez que los conocemos (no los pisa
+// después: si el cliente renombra su cuenta, el dato viejo igual sirve de referencia
+// y evitamos un UPDATE en cada lectura).
+export async function saveAccountInfo(accountId, name, slug) {
+  if (!accountId || (!name && !slug)) return
+  await pool.query(
+    `insert into installations (account_id, account_name, account_slug, updated_at)
+       values ($1, $2, $3, now())
+     on conflict (account_id) do update set
+       account_name = coalesce(nullif(installations.account_name, ''), $2),
+       account_slug = coalesce(nullif(installations.account_slug, ''), $3),
+       updated_at = now()`,
+    [String(accountId), name || null, slug || null],
+  )
+}
+
+export async function getAccountName(accountId) {
+  const { rows } = await pool.query(
+    'select account_name, account_slug from installations where account_id = $1', [String(accountId)],
+  )
+  return rows[0] || null
 }
 
 // Idioma guardado a nivel cuenta (fallback para tableros que aún no se guardaron).
@@ -159,6 +229,32 @@ export async function releaseInvoiceKey(accountId, boardId, key, itemId) {
     `delete from invoice_keys
       where account_id = $1 and board_id = $2 and dedup_key = $3 and item_id = $4`,
     [accountId, boardId, key, String(itemId)],
+  )
+}
+
+// ── Subítems: derecho exclusivo a crearlos ──
+// Insert-first atómico: si dos disparos simultáneos entran con el mismo ítem, solo
+// uno inserta y crea los renglones; el otro se saltea. Antes ambos preguntaban
+// "¿ya tiene subítems?", los dos veían 0 y los dos creaban (duplicados).
+// El reclamo es de VIDA CORTA (10 min): solo existe para tapar la ventana de la
+// carrera, que dura segundos. Uno viejo se considera vencido y se puede volver a
+// tomar — así, si alguien borra los subítems a mano y vuelve a leer, se recrean.
+export async function claimSubitems(accountId, itemId) {
+  const { rows } = await pool.query(
+    `insert into subitem_claims (account_id, item_id) values ($1, $2)
+     on conflict (account_id, item_id) do update set created_at = now()
+       where subitem_claims.created_at < now() - interval '10 minutes'
+     returning item_id`,
+    [accountId, String(itemId)],
+  )
+  return rows.length > 0
+}
+
+// Libera el reclamo si la creación falló, para que un reintento pueda hacerla.
+export async function releaseSubitems(accountId, itemId) {
+  await pool.query(
+    'delete from subitem_claims where account_id = $1 and item_id = $2',
+    [accountId, String(itemId)],
   )
 }
 
@@ -244,7 +340,9 @@ export async function deleteAccountData(accountId) {
   const stats = {}
   try {
     await client.query('BEGIN')
-    for (const table of ['invoice_keys', 'extractions', 'board_configs', 'installations']) {
+    // subitem_claims también guarda IDs de ítems del cliente: si no se borra, quedan
+    // datos suyos después de desinstalar.
+    for (const table of ['invoice_keys', 'subitem_claims', 'extractions', 'board_configs', 'installations']) {
       const r = await client.query(`delete from ${table} where account_id = $1`, [String(accountId)])
       stats[table] = r.rowCount
     }

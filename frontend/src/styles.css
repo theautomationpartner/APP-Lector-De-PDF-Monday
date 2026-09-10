@@ -228,7 +228,7 @@ textarea.gd-input { resize: vertical; min-height: 88px; font-family: var(--font-
   cursor: pointer; transition: border-color .15s, box-shadow .15s, background-color .15s; outline: none;
 }
 .map-select.mapped   { border: 1px solid var(--accent); background-color: var(--accent-bg); color: var(--accent); font-weight: 600; }
-.map-select.unmapped { border: 1px dashed var(--ink-300); color: var(--ink-500); }
+.map-select.unmapped { border: 1px solid var(--ink-200); color: var(--ink-600); }
 .map-select:focus { border-color: var(--accent); box-shadow: var(--sh-focus); }
 .invoice-type-sel .map-select { min-width: 180px; }
 
@@ -258,7 +258,6 @@ textarea.gd-input { resize: vertical; min-height: 88px; font-family: var(--font-
   border-top: 1px solid var(--ink-150); padding: 14px 36px;
   display: flex; align-items: center; gap: 16px;
 }
-.map-counter { font: 500 13px var(--font-ui); color: var(--ink-600); }
 .save-status { font: 500 12.5px var(--font-ui); margin-left: auto; }
 .save-status.saving { color: var(--warn-500); }
 .save-status.saved  { color: var(--ok-500); }
@@ -363,3 +362,192 @@ textarea.gd-input { resize: vertical; min-height: 88px; font-family: var(--font-
 .sb-usage-plan { align-self: flex-start; margin-top: 3px; padding: 1px 8px; border-radius: 999px;
   font: 700 9px var(--font-ui); text-transform: uppercase; letter-spacing: .05em;
   color: var(--brand-navy); background: var(--brand-yellow); }
+
+/* ─── Selector "¿Qué querés cargar?" (Paso 1 nuevo) ─── */
+.preset-row { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; margin:0 0 22px; }
+.preset { border:1.5px solid var(--ink-200); border-radius:var(--r-lg); padding:12px 13px; cursor:pointer; background:var(--ink-0); text-align:left; transition:.14s; font-family:inherit; }
+.preset:hover { border-color:var(--ink-300); }
+.preset.on { border-color:var(--accent); background:var(--accent-50); box-shadow:var(--sh-focus); }
+.preset-name { font:700 13.5px var(--font-ui); color:var(--ink-900); }
+.preset-sub { font:400 11.5px var(--font-ui); color:var(--ink-500); margin-top:3px; }
+
+.pv-head { display:flex; align-items:center; justify-content:space-between; gap:12px; font:700 12.5px var(--font-ui); color:var(--ink-800); margin-bottom:10px; }
+.linkbtn { background:var(--ink-0); border:1px solid var(--ink-200); border-radius:var(--r); padding:6px 12px; font:600 12.5px var(--font-ui); color:var(--accent); cursor:pointer; }
+.linkbtn:hover { border-color:var(--ink-300); }
+
+.pv-scroll { overflow-x:auto; border:1px solid var(--ink-200); border-radius:var(--r-lg); }
+.pv-table { border-collapse:collapse; font-size:12.5px; white-space:nowrap; min-width:100%; }
+.pv-table th { background:var(--ink-50); color:var(--ink-500); font:700 10px var(--font-ui); text-align:left; padding:9px 14px; border-bottom:1px solid var(--ink-200); border-right:1px solid var(--ink-150); text-transform:uppercase; letter-spacing:.04em; }
+.pv-table td { padding:11px 14px; border-right:1px solid var(--ink-150); color:var(--ink-900); }
+.pv-table td:first-child, .pv-table th:first-child { border-left:3px solid var(--accent); }
+
+.field-groups { display:grid; grid-template-columns:1fr 1fr; gap:13px; }
+.fg { border:1px solid var(--ink-200); border-radius:var(--r-lg); padding:12px 14px; }
+.fg h4 { margin:0 0 8px; font:700 10.5px var(--font-ui); letter-spacing:.05em; text-transform:uppercase; color:var(--ink-500); }
+.fg-row { display:flex; align-items:center; gap:9px; padding:5px 0; font-size:13px; cursor:pointer; background:none; border:none; width:100%; text-align:left; font-family:inherit; }
+.fg-sw { width:33px; height:19px; border-radius:11px; background:var(--ink-100); border:1px solid var(--ink-200); flex:none; position:relative; transition:.16s; }
+.fg-sw::after { content:""; position:absolute; top:1.5px; left:1.5px; width:14px; height:14px; border-radius:50%; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.25); transition:.16s; }
+.fg-row.on .fg-sw { background:var(--ok-500); border-color:var(--ok-500); }
+.fg-row.on .fg-sw::after { left:15px; }
+.fg-lbl { color:var(--ink-900); }
+.fg-row:not(.on) .fg-lbl { color:var(--ink-400); }
+
+.create-row { display:flex; align-items:center; gap:14px; margin-top:22px; }
+.create-row .save-btn { margin-left:auto; }
+/* Con el mapeo completo a la vista el botón quedaba abajo de todo y se salían sin
+   aplicar. La barra viaja pegada al borde inferior y late mientras falte crear algo. */
+.apply-bar {
+  position: sticky; bottom: 12px; z-index: 5; margin-top: 20px;
+  padding: 12px 16px; background: var(--ink-0);
+  border: 1px solid var(--ink-200); border-radius: var(--r-lg);
+  box-shadow: 0 6px 20px rgba(15,23,42,.10);
+}
+.apply-btn { height: 42px; padding: 0 24px; font-size: 14px; margin-left: auto; }
+.apply-bar .save-status { margin-left: 0; }
+.apply-bar.hot { border-color: var(--accent-100); }
+.apply-bar.hot .apply-btn:not(:disabled) { animation: applyPulse 2.6s ease-out infinite; }
+@keyframes applyPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(7,31,50,.28); }
+  70%  { box-shadow: 0 0 0 12px rgba(7,31,50,0); }
+  100% { box-shadow: 0 0 0 0 rgba(7,31,50,0); }
+}
+@media (prefers-reduced-motion: reduce) { .apply-bar.hot .apply-btn { animation: none; } }
+.muted-sm { font-size:12px; color:var(--ink-400); }
+
+/* modal de confirmación */
+.modal-bg { position:fixed; inset:0; background:rgba(7,31,50,.5); z-index:60; display:flex; align-items:center; justify-content:center; padding:20px; }
+.modal { background:var(--ink-0); border-radius:var(--r-xl); max-width:430px; width:100%; padding:22px 24px; box-shadow:0 30px 60px -18px rgba(0,0,0,.5); }
+.modal h3 { margin:0 0 5px; font:700 16px var(--font-ui); color:var(--ink-900); }
+.modal .msub { font-size:12.5px; color:var(--ink-600); margin-bottom:13px; }
+.m-list { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; max-height:130px; overflow:auto; }
+.m-list span { font:600 11.5px var(--font-ui); background:var(--ink-100); border:1px solid var(--ink-200); border-radius:6px; padding:4px 9px; color:var(--ink-800); }
+.m-ok { font:600 12.5px var(--font-ui); color:var(--ok-500); background:var(--ok-50); border:1px solid var(--ok-100); border-radius:var(--r); padding:9px 12px; margin-bottom:16px; }
+.m-btns { display:flex; gap:10px; justify-content:flex-end; }
+.m-cancel { background:var(--ink-0); border:1px solid var(--ink-200); border-radius:var(--r); padding:9px 16px; font:600 13px var(--font-ui); cursor:pointer; color:var(--ink-600); }
+.m-confirm { background:var(--accent); color:#fff; border:none; border-radius:var(--r); padding:9px 18px; font:700 13px var(--font-ui); cursor:pointer; }
+
+@media (max-width:640px) { .preset-row { grid-template-columns:1fr 1fr; } .field-groups { grid-template-columns:1fr; } }
+
+/* toggletip "?" (ayuda accesible; anda en touch) */
+.tt { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%; background:var(--ink-100); border:1px solid var(--ink-200); color:var(--ink-500); font:700 10px var(--font-ui); cursor:pointer; margin-left:5px; position:relative; vertical-align:middle; outline:none; }
+.tt:hover, .tt:focus { background:var(--accent-50); border-color:var(--accent); color:var(--accent); }
+.tt-b { display:none; position:absolute; bottom:calc(100% + 7px); left:50%; transform:translateX(-50%); background:var(--brand-navy); color:#fff; font:500 11.5px var(--font-ui); line-height:1.4; padding:7px 10px; border-radius:7px; width:185px; z-index:70; box-shadow:0 10px 24px -8px rgba(0,0,0,.55); text-align:left; white-space:normal; text-transform:none; letter-spacing:0; }
+.tt-b::after { content:""; position:absolute; top:100%; left:50%; transform:translateX(-50%); border:5px solid transparent; border-top-color:var(--brand-navy); }
+.tt:hover .tt-b, .tt:focus .tt-b { display:block; }
+
+/* ─── Paso 2: Activar lectura (guía) ─── */
+.guide { margin-top:4px; }
+.gstep { display:flex; gap:13px; align-items:flex-start; padding:14px 0; border-bottom:1px solid var(--ink-150); }
+.gstep:last-child { border-bottom:none; }
+.gn { width:26px; height:26px; border-radius:50%; flex:none; background:var(--brand-navy); color:#fff; display:grid; place-items:center; font:700 13px var(--font-ui); }
+.gstep b { font:700 14px var(--font-ui); color:var(--ink-900); }
+.gstep-sub { color:var(--ink-600); font-size:12.5px; margin-top:2px; }
+.usehint { display:flex; align-items:center; gap:13px; margin-top:18px; padding:14px 16px; border:1px solid var(--ink-200); border-radius:var(--r-lg); background:var(--ink-50); }
+.dz-ic { width:38px; height:44px; border-radius:6px; background:var(--ink-0); border:1px solid #E4646E; color:#E4646E; display:grid; place-items:center; font-size:16px; flex:none; }
+.usehint b { font:700 13.5px var(--font-ui); color:var(--ink-900); }
+
+/* ─── Subítems (Paso 1) ─── */
+.sub-block { margin-top:24px; border-top:1px solid var(--ink-150); padding-top:18px; }
+.sub-row { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+.sub-row .sl b { font:700 13.5px var(--font-ui); color:var(--ink-900); }
+.radio { display:flex; gap:7px; }
+.opt { border:1.5px solid var(--ink-200); border-radius:8px; padding:7px 13px; font:600 12.5px var(--font-ui); cursor:pointer; background:var(--ink-0); color:var(--ink-600); }
+.opt.on { border-color:var(--accent); background:var(--accent-50); color:var(--ink-900); }
+.sub-toggles { display:flex; gap:24px; flex-wrap:wrap; margin-top:14px; border:1px solid var(--ink-200); border-radius:var(--r-lg); padding:10px 14px; }
+
+/* Sin país elegido: prompt (el producto es por país, no genérico) */
+.pick-country { margin-top:18px; padding:24px; text-align:center; font:600 14px var(--font-ui); color:var(--ink-600); border:1px dashed var(--ink-300); border-radius:var(--r-lg); background:var(--ink-50); }
+
+/* Avanzado: conectar a columnas existentes */
+.advanced { margin-top:22px; }
+.adv-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 18px; margin-top:12px; padding:14px 16px; border:1px solid var(--ink-200); border-radius:var(--r-lg); background:var(--ink-50); }
+.adv-row { display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12.5px; }
+.adv-lbl { color:var(--ink-600); flex:none; }
+.adv-row .map-select { max-width:190px; }
+@media (max-width:640px) { .adv-grid { grid-template-columns:1fr; } }
+
+/* Avanzado v2: toggle prominente + mapeo agrupado como la factura */
+.adv-toggle { display:inline-flex; align-items:center; gap:6px; background:var(--ink-0); border:1px solid var(--ink-200); border-radius:var(--r); padding:9px 15px; font:600 13px var(--font-ui); color:var(--ink-800); cursor:pointer; }
+.adv-toggle:hover { border-color:var(--ink-300); background:var(--ink-50); }
+.adv-toggle.on { border-color:var(--accent); color:var(--accent); background:var(--accent-50); }
+.adv-groups { display:grid; grid-template-columns:1fr 1fr; gap:13px; margin-top:14px; }
+.adv-group { border:1px solid var(--ink-200); border-radius:var(--r-lg); padding:12px 14px; background:var(--ink-50); }
+.adv-group h4 { margin:0 0 8px; font:700 10.5px var(--font-ui); letter-spacing:.05em; text-transform:uppercase; color:var(--ink-500); }
+.adv-group .adv-row .map-select { max-width:150px; }
+@media (max-width:640px) { .adv-groups { grid-template-columns:1fr; } }
+
+/* Banner de éxito → próximo paso (después de crear el tablero) */
+.done-next { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-top:16px; padding:14px 16px; border-radius:var(--r-lg); background:var(--ok-50); border:1px solid var(--ok-100); color:var(--ok-500); font:600 13px var(--font-ui); }
+
+/* ─── Sub-fila dentro de una regla (ej. elegir la columna de estado) ─── */
+.gd-subrow { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ink-100); }
+.gd-sublabel { font: 500 12.5px var(--font-ui); color: var(--ink-600); }
+.gd-subrow .gd-select { width: auto; min-width: 190px; }
+.gd-subwarn { flex-basis: 100%; font: 400 12px var(--font-ui); color: var(--warn-500); }
+
+/* ─── Lista blanca de IDs fiscales (regla "solo estas facturas") ─── */
+.gd-btn-ghost { font: 600 12.5px var(--font-ui); color: var(--accent); background: none; border: 1px solid var(--ink-200); border-radius: var(--r); padding: 7px 13px; cursor: pointer; }
+.gd-btn-ghost:hover { background: var(--accent-bg); border-color: var(--accent-100); }
+.taxid-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+.taxid-chip { display: inline-flex; align-items: center; gap: 7px; font: 500 12.5px var(--font-ui); color: var(--ink-700); background: var(--ink-50); border: 1px solid var(--ink-200); border-radius: 20px; padding: 4px 6px 4px 12px; font-variant-numeric: tabular-nums; }
+.taxid-chip button { border: none; background: none; color: var(--ink-500); font-size: 15px; line-height: 1; cursor: pointer; padding: 0 4px; border-radius: 50%; }
+.taxid-chip button:hover { color: var(--err-500); }
+
+/* ─── Mapeo unificado: cada campo de la factura → su columna del tablero ───
+   Antes eran dos pantallas (tildar campos + elegir columna). Ahora el desplegable
+   es el control: elegís columna, creás una nueva, o "No cargar". */
+.mapbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding: 10px 14px; border: 1px solid var(--ink-200); border-radius: var(--r); background: var(--ink-50); font: 600 12.5px var(--font-ui); color: var(--ink-700); }
+.mapbar .maphelp { font-weight: 400; color: var(--ink-500); }
+/* Multicolumna: con 34 campos, una sola columna hacía un scroll eterno. */
+.map-list { margin-top: 12px; }
+.map-cols { columns: 2; column-gap: 12px; }
+.map-cols .fg { break-inside: avoid; margin-bottom: 12px; }
+.map-row { display: grid; grid-template-columns: minmax(96px, 1fr) 10px minmax(140px, 1.15fr); align-items: center; gap: 8px; padding: 3px 0; }
+.map-row .map-f { font: 400 12.5px var(--font-ui); color: var(--ink-700); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-row.off .map-f { color: var(--ink-700); }
+.map-row .map-ar { color: var(--ink-400); font-size: 12px; }
+.map-row .map-select { width: 100%; min-width: 0; font-size: 12px; padding: 5px 8px; }
+/* "nueva": la columna todavía no existe en el tablero. */
+.pv-table th .nw { font-style: normal; font-size: 8.5px; font-weight: 800; letter-spacing: .04em; color: #3a2c05; background: var(--warn-300, #F0C020); padding: 1px 5px; border-radius: 20px; margin-left: 4px; vertical-align: 1px; }
+@media (max-width: 640px) { .map-cols { columns: 1; } }
+
+/* ─── Guía visual del Paso 2: capturas reales con el botón señalado ─── */
+.gtabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.gtab { flex: 1; min-width: 120px; display: flex; align-items: center; gap: 8px; justify-content: center; border: 1.5px solid var(--ink-200); border-radius: var(--r); padding: 9px 12px; font: 600 12.5px var(--font-ui); color: var(--ink-500); background: var(--surface, #fff); cursor: pointer; }
+.gtab.on { border-color: var(--accent); background: var(--accent-bg); color: var(--ink-800); }
+.gtab b { width: 20px; height: 20px; border-radius: 50%; background: var(--ink-100); display: grid; place-items: center; font-size: 11px; color: var(--ink-600); flex: none; }
+.gtab.on b { background: var(--accent); color: #fff; }
+.gshot { border: 1px solid var(--ink-200); border-radius: var(--r); overflow: hidden; background: #fff; }
+.gshot img { display: block; width: 100%; height: auto; }
+.gcap { font: 400 12.5px var(--font-ui); color: var(--ink-600); margin: 10px 0 0; }
+
+/* Encabezado de grupo de reglas (qué se carga vs cómo se escribe). */
+.rgroup { font: 700 10.5px var(--font-ui); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-400); margin: 26px 0 10px; }
+.rgroup:first-of-type { margin-top: 4px; }
+
+/* ─── Paso 1: países con badge + tarjetas de objetivo ─── */
+.q-label { font: 700 11px var(--font-ui); letter-spacing: .5px; text-transform: uppercase; color: var(--ink-400); margin: 0 0 10px; display: flex; align-items: center; gap: 6px; }
+.q-label .q-hint { font-weight: 500; font-size: 12px; text-transform: none; letter-spacing: 0; color: var(--ink-400); }
+.chip.soon { border-style: dashed; opacity: .7; cursor: default; }
+.chip .chip-ck, .chip .chip-bdg { margin-left: 7px; }
+.chip .chip-ck { font-size: 11px; }
+.chip .chip-bdg { font-size: 9px; font-weight: 800; letter-spacing: .03em; padding: 2px 6px; border-radius: 20px; background: var(--ink-100); color: var(--ink-400); }
+.obj-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 6px; }
+.obj { position: relative; border: 1.5px solid var(--ink-200); border-radius: var(--r-lg, 12px); padding: 18px 16px; cursor: pointer; background: var(--surface, #fff); text-align: left; font-family: inherit; transition: .14s; }
+.obj:hover { border-color: var(--accent-100); transform: translateY(-2px); }
+.obj.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+.obj-em { font-size: 24px; line-height: 1; }
+.obj-name { font: 700 15px var(--font-ui); color: var(--ink-800); margin-top: 10px; }
+.obj-desc { font: 400 12.5px var(--font-ui); color: var(--ink-500); margin-top: 3px; line-height: 1.4; }
+.obj-cols { font: 600 11.5px var(--font-ui); color: var(--ink-400); margin-top: 9px; }
+.obj-rec { position: absolute; top: -9px; right: 12px; font: 800 10px var(--font-ui); color: #3a2c05; background: #F0C020; padding: 2px 9px; border-radius: 20px; }
+@media (max-width: 720px) { .obj-row { grid-template-columns: 1fr; } }
+
+/* Aviso al cambiar de objetivo cuando eso SACA campos que ya cargaban. */
+.undo-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding: 9px 13px; border: 1px solid var(--warn-100, #F3E3B8); background: var(--warn-50, #FDF7E7); border-radius: var(--r); font: 500 12.5px var(--font-ui); color: var(--ink-700); }
+
+/* Atajos de paquete dentro de la barra del mapeo. Reemplazan a las 3 tarjetas de
+   objetivo: el mapeo es la pantalla, esto es solo para no tildar 34 campos a mano. */
+.quickset { display: inline-flex; align-items: center; gap: 8px; font: 400 12.5px var(--font-ui); color: var(--ink-500); }
+.quickset .linkbtn { font: 500 12.5px var(--font-ui); }
+.quickset .linkbtn.on { font-weight: 700; color: var(--accent); text-decoration: none; cursor: default; }
