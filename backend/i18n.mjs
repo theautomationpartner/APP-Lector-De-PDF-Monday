@@ -53,9 +53,11 @@ export function t(lang, key, vars) {
 }
 
 // Etiquetas del ciclo de vida de la columna de estado.
+// 'warned' = se leyó y se cargó, pero algún control no cerró y hay que mirarlo.
+// Es distinto de 'error' (ahí no se cargó nada) y de 'done' (ahí cerró todo).
 const lifecycle = {
-  en: { processing: 'Reading invoice', done: 'Invoice read', error: 'Error - see comments', duplicate: 'Duplicate', ignored: 'Ignored' },
-  es: { processing: 'Leyendo Comprobante', done: 'Comprobante Leído', error: 'Error - Mirar Comentarios', duplicate: 'Duplicada', ignored: 'Ignorada' },
+  en: { processing: 'Reading invoice', done: 'Invoice read', warned: 'Read - check warnings', error: 'Error - see comments', duplicate: 'Duplicate', ignored: 'Ignored' },
+  es: { processing: 'Leyendo Comprobante', done: 'Comprobante Leído', warned: 'Leído - Revisar Avisos', error: 'Error - Mirar Comentarios', duplicate: 'Duplicada', ignored: 'Ignorada' },
 }
 export function lifecycleLabels(lang) {
   return lifecycle[lang] || lifecycle.en

@@ -634,16 +634,32 @@ app.post('/monday/extract', async (req, res) => {
       }
     }
 
-    // 7) Estado → "leido" + comentario con lo cargado.
-    if (statusColId) await setStatus(shortLivedToken, boardId, itemId, statusColId, labels.done)
+    // 7) Estado + comentario con lo cargado.
+    //
+    // Si algún control no cerró (CAE con largo raro, CUIT que no pasa el dígito
+    // verificador, desglose que no suma), el estado lo dice: antes un comprobante
+    // con avisos se veía EXACTAMENTE igual de verde que uno perfecto, y los avisos
+    // quedaban al final de un comentario de 20 líneas. Caso real (2026-09-10): una
+    // factura entró con el CUIT del receptor mal, un impuesto al que le faltaba un
+    // dígito y el nº de comprobante puesto como CAE — los tres detectados, los tres
+    // avisados, y nadie los vio.
+    // La etiqueta se crea sola si el tablero no la tiene (create_labels_if_missing).
+    const hayAvisos = (warnings || []).length > 0
+    if (statusColId) await setStatus(shortLivedToken, boardId, itemId, statusColId, hayAvisos ? labels.warned : labels.done)
+
     const loaded = Object.entries(mapping)
       .filter(([f, c]) => c && (data[f] || '').toString().trim())
       .map(([f]) => `• ${f}: ${data[f]}`)
     if (subitemsCreated > 0) loaded.push(t(lang, 'subitemsLoaded', { n: subitemsCreated }))
-    // Controles que no cerraron (CAE con largo raro, desglose que no suma): van en
-    // el mismo comentario. Antes solo quedaban en el log y el usuario no se enteraba.
-    for (const w of (warnings || [])) loaded.push(t(lang, w.key, w.vars))
-    await postComment(shortLivedToken, itemId, t(lang, 'loaded', { model, n: Object.keys(cv).length }) + '\n' + loaded.join('\n'))
+    // Los avisos van ARRIBA de todo, antes de la lista de columnas: son lo único
+    // que pide una acción de la persona. Abajo se los come la lista.
+    const avisos = (warnings || []).map((w) => t(lang, w.key, w.vars))
+    await postComment(
+      shortLivedToken,
+      itemId,
+      (avisos.length ? avisos.join('\n') + '\n\n' : '') +
+        t(lang, 'loaded', { model, n: Object.keys(cv).length }) + '\n' + loaded.join('\n'),
+    )
 
     // 8) Histórico + tablero interno de ops (fire-and-forget, no frena la respuesta).
     const extractionId = await logExtraction({

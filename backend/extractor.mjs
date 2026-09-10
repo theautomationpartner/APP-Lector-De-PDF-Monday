@@ -41,6 +41,33 @@ async function borrarArchivo(fileId) {
   }
 }
 
+// Empareja el FORMATO del tipo de documento. Al modelo le pedimos el tipo "tal
+// como está impreso" (y está bien: así no inventa un tipo que el papel no dice),
+// pero cada proveedor lo imprime a su manera — "REMITO", "Remito", "FACTURA" — y
+// la columna del tablero es un DROPDOWN: cada variante crea una opción distinta,
+// así que "REMITO" y "Remito" quedan como dos categorías que no se agrupan ni se
+// filtran juntas. Caso real (2026-09-10): 10 remitos, 3 formatos.
+//
+// Solo cambia mayúsculas/minúsculas. NO traduce ni reinterpreta: si el papel dice
+// "Nota de Entrega", sigue diciendo "Nota de Entrega".
+//
+// Las facturas CON QR de AFIP no pasan por acá con formato raro: el pack de AR ya
+// les pone el nombre canónico desde el código del comprobante. Esto arregla el
+// resto — remitos (que no tienen QR) y cualquier país sin pack.
+const MINUSCULAS = new Set(['de', 'del', 'la', 'las', 'el', 'los', 'y', 'e'])
+export function normalizarTipoDoc(valor) {
+  const s = String(valor || '').trim()
+  if (!s) return s
+  return s.split(/\s+/).map((palabra, i) => {
+    // Letra sola = la letra fiscal del comprobante (A, B, C, E, M, R): va en
+    // mayúscula siempre. "Factura a" sería un comprobante distinto al leerlo.
+    if (palabra.length === 1) return palabra.toUpperCase()
+    const baja = palabra.toLowerCase()
+    if (i > 0 && MINUSCULAS.has(baja)) return baja
+    return baja.charAt(0).toUpperCase() + baja.slice(1)
+  }).join(' ')
+}
+
 // Esquema JSON (catálogo + detected_country) para el set de campos dado. Se arma
 // por llamada porque los campos dependen de los países configurados en el tablero.
 // lineItems: agrega el array de renglones (solo si el tablero activó los subítems
@@ -270,6 +297,11 @@ export async function extractInvoice(fileBase64, mediaType = 'application/pdf', 
       ? await decodeInvoiceQr(qrBase64 || bytes(), qrMediaType || mediaType).catch(() => null)
       : null
     const enriched = await enrichAll(data, countries, { fileBase64: qrBase64 || bytes(), mediaType: qrMediaType || mediaType, qr }, docKind)
+
+    // Al final de todo: después del enrich, para que si el pack del país ya le puso
+    // el nombre canónico (facturas con QR), esto no lo pise con otra cosa — solo
+    // empareja el formato de lo que haya quedado.
+    data.document_type = normalizarTipoDoc(data.document_type)
 
     return { data, usage: res.usage, model, warnings: enriched?.warnings || [] }
   } finally {
