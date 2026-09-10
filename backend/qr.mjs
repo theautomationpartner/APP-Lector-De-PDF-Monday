@@ -39,7 +39,8 @@ export function decodeInvoiceQr(fileBase64, mediaType) {
 
 async function decodeAhora(fileBase64, mediaType) {
   try {
-    const buf = Buffer.from(fileBase64, 'base64')
+    // Acepta base64 (archivos chicos) o Buffer (grandes, leidos del disco).
+    const buf = Buffer.isBuffer(fileBase64) ? fileBase64 : Buffer.from(fileBase64, 'base64')
     if (mediaType !== 'application/pdf') return await scan(buf, 2400) // foto / scan
     // Renderizar una página cuesta 40-90 MB. Antes probábamos 2 escalas × 3 páginas
     // = hasta 6 renders por factura, y con un PDF pesado el proceso moría por falta

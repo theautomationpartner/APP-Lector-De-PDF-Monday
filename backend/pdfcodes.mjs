@@ -25,11 +25,14 @@ export const CODE_EXTRACTORS = {
   uy_cae:          (t) => { const m = t.match(/(?:Nro\.?\s*)?CAE\s*(?:N[°º.]*)?\s*:?\s*(\d{9,14})\b/i); return m ? m[1] : null },
 }
 
-// Extrae el texto de un PDF (base64). null si no se puede (no es PDF con capa de texto).
+// Extrae el texto de un PDF. Acepta base64 (archivos chicos, que viajan en memoria)
+// o un Buffer (archivos grandes, que se leen del disco y nunca se pasan a base64:
+// convertirlos sumaria un 33% de memoria justo en el caso que no entra).
+// null si no se puede (no es PDF, o es un escaneo sin capa de texto).
 export async function pdfText(base64) {
   try {
     const pdfParse = require('pdf-parse/lib/pdf-parse.js') // el /lib evita el self-test del index
-    const { text } = await pdfParse(Buffer.from(base64, 'base64'))
+    const { text } = await pdfParse(Buffer.isBuffer(base64) ? base64 : Buffer.from(base64, 'base64'))
     return text || null
   } catch (e) { console.warn('[pdfText] no se pudo extraer texto:', e.message); return null }
 }

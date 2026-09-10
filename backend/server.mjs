@@ -3,7 +3,10 @@ import sharp from 'sharp'
 import v8 from 'node:v8'
 import jwt from 'jsonwebtoken'
 import path from 'node:path'
-import { existsSync } from 'node:fs'
+import os from 'node:os'
+import { existsSync, createWriteStream } from 'node:fs'
+import { unlink } from 'node:fs/promises'
+import { once } from 'node:events'
 import { fileURLToPath } from 'node:url'
 import { config, mondaySecrets } from './config.mjs'
 import { extractInvoice } from './extractor.mjs'
@@ -287,6 +290,7 @@ app.post('/monday/extract', async (req, res) => {
   let claimedKey = null // llave de dedup reclamada por ESTA corrida (para liberarla si falla)
   let wrote = false     // true = las columnas ya se escribieron (no liberar la llave)
   let slotHeld = false  // true = esta corrida tiene un cupo de la cola tomado
+  let tmpPath = null    // archivo temporal en disco (solo para los PDF grandes)
   try {
     // 1) Auth: JWT firmado con el Signing Secret de la app.
     const auth = req.headers.authorization
@@ -400,21 +404,49 @@ app.post('/monday/extract', async (req, res) => {
     // el que sube un escaneo pesado reciba un mensaje claro, a que le corte la
     // facturación a otro.
     //
-    // Este número está atado a la RAM del droplet (458 MB). Si se agranda la máquina,
-    // se puede subir — pero medir antes con un archivo real, no estimar.
-    const MAX_FILE_MB = 6
+    // Este número está atado a la RAM del droplet (458 MB) para los archivos que
+    // viajan EN MEMORIA. Los PDF grandes ya no van por ahí: pasan por disco + Files
+    // API (ver abajo), que es lo que permite subirlo de 6 a 20 sin agrandar la máquina.
+    const MAX_FILE_MB = 20
     const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024
+    // Arriba de este peso, el PDF NO entra en memoria: se baja a un archivo temporal
+    // y se manda a la IA por la Files API. Debajo, sigue el camino de siempre —
+    // es el 95% de los casos y no se toca.
+    const DISCO_DESDE_BYTES = 4 * 1024 * 1024
     const fresp = await fetch(file.url, { signal: AbortSignal.timeout(30_000) })
     if (!fresp.ok) throw new UserError(t(lang, 'noPdf'))
     const clen = Number(fresp.headers.get('content-length') || 0)
     console.log(`[extract] archivo item=${itemId} tipo=${file.mediaType} tamaño=${clen ? Math.round(clen / 1024) + 'KB' : 'no declarado'}`)
     if (clen > MAX_FILE_BYTES) throw new UserError(t(lang, 'fileTooBig', { mb: MAX_FILE_MB }))
+    // Solo los PDF van por disco. Las fotos ya se achican con sharp a ~300-500 KB,
+    // así que nunca son el problema de memoria y no vale la pena complicarlas.
+    const porDisco = file.mediaType === 'application/pdf' && clen > DISCO_DESDE_BYTES
     // Descarga con TOPE DURO. Antes hacíamos arrayBuffer() de una: si el servidor no
     // declaraba content-length, el archivo entero entraba en memoria antes de que
     // pudiéramos medirlo — y con uno grande el proceso moría ahí mismo, sin dejar
     // rastro (el ítem quedaba en "Leyendo" para siempre). Ahora cortamos al pasarnos.
-    let buf
-    {
+    let buf = null
+    if (porDisco) {
+      // A DISCO. La memoria usada acá es constante (un trozo por vez), no importa
+      // si el PDF pesa 5 MB o 20. El archivo se borra en el finally de más abajo.
+      tmpPath = path.join(os.tmpdir(), `lector-${itemId}-${Date.now()}.pdf`)
+      let bajado = 0
+      const salida = createWriteStream(tmpPath)
+      try {
+        for await (const trozo of fresp.body) {
+          bajado += trozo.length
+          if (bajado > MAX_FILE_BYTES) {
+            console.warn(`[extract] archivo cortado: superó ${MAX_FILE_MB}MB item=${itemId}`)
+            throw new UserError(t(lang, 'fileTooBig', { mb: MAX_FILE_MB }))
+          }
+          if (!salida.write(trozo)) await once(salida, 'drain') // respetamos la contrapresión
+        }
+      } finally {
+        salida.end()
+        await once(salida, 'close').catch(() => {})
+      }
+      console.log(`[extract] descargado a disco ${Math.round(bajado / 1024)}KB item=${itemId} rss=${Math.round(process.memoryUsage().rss / 1048576)}MB`)
+    } else {
       const partes = []
       let bajado = 0
       for await (const trozo of fresp.body) {
@@ -434,7 +466,7 @@ app.post('/monday/extract', async (req, res) => {
     // ancho de banda. Una foto de 8 MB pasa a ~300 KB. El QR se busca sobre el
     // ORIGINAL (ahí sí hace falta resolución), por eso se achica después.
     let paraIA = buf
-    if (file.mediaType !== 'application/pdf') {
+    if (!porDisco && file.mediaType !== 'application/pdf') {
       try {
         const chico = await sharp(buf).rotate()
           .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
@@ -445,16 +477,27 @@ app.post('/monday/extract', async (req, res) => {
         }
       } catch (e) { console.warn('[extract] no pude achicar la foto:', e.message) }
     }
-    const b64IA = paraIA.toString('base64')
-    const mediaIA = paraIA === buf ? file.mediaType : 'image/jpeg'
-    const b64Qr = paraIA === buf ? b64IA : buf.toString('base64')
+    // Por disco no hay base64: el extractor sube el archivo y lee los bytes del
+    // temporal solo cuando los necesita (códigos del PDF, QR). Ese es justamente
+    // el ahorro — el base64 nunca existe en memoria.
+    const b64IA = porDisco ? null : paraIA.toString('base64')
+    const mediaIA = porDisco || paraIA === buf ? file.mediaType : 'image/jpeg'
+    const b64Qr = porDisco ? undefined : (paraIA === buf ? b64IA : buf.toString('base64'))
     const { data, usage, model, warnings } = await extractInvoice(
       b64IA,
       mediaIA,
       MODEL,
-      { countries: cfg?.countries || [], lineItems: !!cfg?.line_items_enabled, qrBase64: b64Qr, qrMediaType: file.mediaType, docKind: cfg?.doc_kind || 'fiscal' },
+      {
+        countries: cfg?.countries || [],
+        lineItems: !!cfg?.line_items_enabled,
+        qrBase64: b64Qr,
+        qrMediaType: file.mediaType,
+        docKind: cfg?.doc_kind || 'fiscal',
+        filePath: porDisco ? tmpPath : undefined,
+      },
     )
     buf = null // liberamos el original apenas no se necesita
+    paraIA = null
 
     // 5.4) FILTRO tipo de documento: si el tablero pidió "solo facturas/NC/ND" y
     // la IA clasificó el documento como "other" (remito, ticket, presupuesto, OC…),
@@ -637,6 +680,9 @@ app.post('/monday/extract', async (req, res) => {
     // queda tomado para siempre y la cola se traba sola de a poco hasta frenar
     // todas las lecturas. Va en finally y no al final del try justamente por eso.
     if (slotHeld) releaseExtractSlot()
+    // Y borrar el temporal, por el mismo motivo: si queda, el disco se va llenando
+    // de PDFs viejos sin que nadie lo note hasta que no entra uno nuevo.
+    if (tmpPath) await unlink(tmpPath).catch(() => {})
   }
 })
 

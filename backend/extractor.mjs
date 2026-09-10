@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { createReadStream, readFileSync } from 'node:fs'
 import { fieldsForCountries, blankZeros, DATE_FIELDS, LINE_FIELDS } from './fields.mjs'
 import { reconcileCodes } from './pdfcodes.mjs'
 import { promptFor, enrichAll, anyPack, usaQr } from './countries/index.mjs'
@@ -6,6 +7,39 @@ import { decodeInvoiceQr } from './qr.mjs'
 import { config } from './config.mjs'
 
 const client = new Anthropic({ apiKey: config.anthropicApiKey })
+
+// Files API: se sube el archivo aparte y el mensaje lo referencia por id, en vez
+// de mandar el base64 adentro del request. Sirve para los archivos GRANDES, que
+// de la otra forma no entran en memoria: mandar un PDF de 9 MB en base64 son
+// ~33 MB de heap (buffer + base64 + el body del request), y el proceso moria.
+// Subiendolo desde disco con un stream, el base64 NUNCA pasa por la memoria.
+//
+// Es sin perdida: se sube el archivo original, byte por byte. No se re-comprime
+// ni se baja resolucion, asi que la calidad de lectura es identica.
+//
+// En el SDK 0.70 la Files API todavia vive en el namespace beta y pide el header.
+const FILES_BETA = 'files-api-2025-04-14'
+
+// Sube el archivo desde DISCO (stream, no lo carga en memoria) y devuelve su id.
+async function subirArchivo(filePath) {
+  const { id } = await client.beta.files.upload({
+    file: createReadStream(filePath),
+    betas: [FILES_BETA],
+  })
+  return id
+}
+
+// Los archivos subidos quedan guardados en la cuenta de Anthropic y ocupan cuota.
+// Como cada uno se usa para UNA lectura y nunca mas, se borra al terminar. Falla
+// en silencio a proposito: si el borrado no sale, la factura ya se leyo bien y no
+// vale la pena romper la lectura por una tarea de limpieza.
+async function borrarArchivo(fileId) {
+  try {
+    await client.beta.files.delete(fileId, { betas: [FILES_BETA] })
+  } catch (e) {
+    console.warn('[files] no se pudo borrar el archivo subido:', e.message)
+  }
+}
 
 // Esquema JSON (catálogo + detected_country) para el set de campos dado. Se arma
 // por llamada porque los campos dependen de los países configurados en el tablero.
@@ -129,7 +163,16 @@ export function buildPrompt(countries = [], lineItems = false, kind = 'fiscal') 
 export async function extractInvoice(fileBase64, mediaType = 'application/pdf', model = 'claude-haiku-4-5', hints = {}) {
   // qrBase64/qrMediaType = el archivo ORIGINAL. A la IA le mandamos las fotos
   // achicadas (no necesita más), pero el QR sí necesita la resolución original.
-  const { countries = [], lineItems = false, qrBase64, qrMediaType, docKind = 'fiscal' } = hints
+  const { countries = [], lineItems = false, qrBase64, qrMediaType, docKind = 'fiscal', filePath } = hints
+  // Con filePath, los bytes viven en DISCO y no en memoria. Las dos capas que
+  // corren DESPUES de la IA (los codigos desde el texto del PDF y el QR) igual
+  // necesitan los bytes: se leen del disco una sola vez, y recien cuando se usan.
+  // Una copia de 9 MB, contra las tres (~33 MB) del camino base64.
+  let bytesCache
+  const bytes = () => {
+    if (bytesCache === undefined) bytesCache = filePath ? readFileSync(filePath) : fileBase64
+    return bytesCache
+  }
   // El QR se decodifica DESPUÉS de la llamada a la IA, no en paralelo. En paralelo
   // era más rápido, pero los dos picos de memoria se sumaban y en un archivo pesado
   // el proceso moría. Secuencial, el pico es el mayor de los dos, no la suma.
@@ -138,73 +181,98 @@ export async function extractInvoice(fileBase64, mediaType = 'application/pdf', 
   const fields = fieldsForCountries(countries, docKind)
   const schema = buildSchema(fields, lineItems, docKind)
 
-  const fileBlock = mediaType === 'application/pdf'
-    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileBase64 } }
-    : { type: 'image', source: { type: 'base64', media_type: mediaType, data: fileBase64 } }
+  // Camino GRANDE (filePath): el archivo se subio a disco en vez de venir en
+  // memoria. Se sube por la Files API y el mensaje lo referencia por id.
+  // Camino CHICO (fileBase64): el de siempre, intacto — es el 95% de los casos y
+  // no se toca para no arriesgar lo que ya funciona.
+  let uploadedFileId = null
+  if (filePath) uploadedFileId = await subirArchivo(filePath)
 
-  const res = await client.messages.create({
-    model,
-    // 4000 con renglones (una factura de 30+ renglones no entra en 2000 y
-    // truncaría el JSON). max_tokens es un tope, no se factura lo no usado.
-    max_tokens: lineItems ? 4000 : 2000,
-    // Leer una factura es una tarea determinística: el mismo papel tiene que dar
-    // siempre el mismo resultado. Por defecto la API va en 1.0 (con variabilidad),
-    // que es lo que se quiere para escribir, no para transcribir.
-    temperature: 0,
-    output_config: { format: { type: 'json_schema', schema } },
-    // El rol va en el system prompt (recomendación de Anthropic) y explica el PORQUÉ
-    // de la regla principal: un dato inventado es peor que uno vacío. Con el motivo
-    // el modelo generaliza a los casos que no enumeramos.
-    system:
-      'You are a fiscal-document data extractor working for an accounting firm. What you return is loaded ' +
-      'straight into the client\'s books, unreviewed. A blank field is visible and gets filled in by hand; ' +
-      'a wrong number gets booked and nobody ever notices. So an invented value is far worse than an empty ' +
-      'one. Never guess, never infer, never compute: if you cannot SEE it printed on the document, leave it ' +
-      'empty. Accuracy of transcription matters more than completeness.',
-    messages: [
-      {
-        role: 'user',
-        content: [
-          fileBlock,
-          {
-            type: 'text',
-            text: buildPrompt(countries, lineItems, docKind),
-          },
-        ],
-      },
-    ],
-  })
+  // Desde aca va todo en try/finally: si la lectura falla a mitad, el archivo
+  // subido tiene que borrarse igual. Sin esto cada error dejaria un archivo
+  // colgado en la cuenta de Anthropic, ocupando cuota, para siempre.
+  try {
 
-  const text = res.content.find((b) => b.type === 'text')?.text || '{}'
-  const data = JSON.parse(text)
+    const fileBlock = uploadedFileId
+      ? (mediaType === 'application/pdf'
+          ? { type: 'document', source: { type: 'file', file_id: uploadedFileId } }
+          : { type: 'image', source: { type: 'file', file_id: uploadedFileId } })
+      : (mediaType === 'application/pdf'
+          ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileBase64 } }
+          : { type: 'image', source: { type: 'base64', media_type: mediaType, data: fileBase64 } })
 
-  // Los impuestos que no existen en la factura van vacíos, NUNCA en 0 (un 0 en el
-  // tablero parece un dato leído). El prompt ya lo pide; esto lo garantiza.
-  const zeroed = blankZeros(data)
-  if (zeroed.length) console.log('[extractor] impuestos en 0 → vacío:', zeroed.join(', '))
+    // El endpoint beta se usa SOLO cuando hace falta el header de la Files API. Con
+    // base64 seguimos por el estable, para no cambiarle el camino a lo que anda.
+    const api = uploadedFileId ? client.beta.messages : client.messages
+    const betaOpts = uploadedFileId ? { betas: [FILES_BETA] } : {}
 
-  // Capa determinística: en PDFs con texto, corrige los códigos largos (chave, CUFE,
-  // CAE, UUID) que el LLM pudo transcribir mal y las fechas que pudo dar vuelta
-  // (02/09 leído como 9 de febrero). Gratis, exacto. No aplica a fotos.
-  if (mediaType === 'application/pdf') {
-    try {
-      const { codes, dates, pv } = await reconcileCodes(data, fileBase64, fields, [...DATE_FIELDS])
-      if (codes.length) console.log('[extractor] códigos corregidos desde el texto del PDF:', codes.join(', '))
-      if (dates.length) console.log('[extractor] fechas dadas vuelta corregidas desde el texto del PDF:', dates.join(', '))
-      if (pv) console.log(`[extractor] punto de venta ajustado al ancho impreso: ${pv}`)
-    } catch (e) { console.warn('[extractor] reconcile contra el PDF falló:', e.message) }
+    const res = await api.create({
+      ...betaOpts,
+      model,
+      // 4000 con renglones (una factura de 30+ renglones no entra en 2000 y
+      // truncaría el JSON). max_tokens es un tope, no se factura lo no usado.
+      max_tokens: lineItems ? 4000 : 2000,
+      // Leer una factura es una tarea determinística: el mismo papel tiene que dar
+      // siempre el mismo resultado. Por defecto la API va en 1.0 (con variabilidad),
+      // que es lo que se quiere para escribir, no para transcribir.
+      temperature: 0,
+      output_config: { format: { type: 'json_schema', schema } },
+      // El rol va en el system prompt (recomendación de Anthropic) y explica el PORQUÉ
+      // de la regla principal: un dato inventado es peor que uno vacío. Con el motivo
+      // el modelo generaliza a los casos que no enumeramos.
+      system:
+        'You are a fiscal-document data extractor working for an accounting firm. What you return is loaded ' +
+        'straight into the client\'s books, unreviewed. A blank field is visible and gets filled in by hand; ' +
+        'a wrong number gets booked and nobody ever notices. So an invented value is far worse than an empty ' +
+        'one. Never guess, never infer, never compute: if you cannot SEE it printed on the document, leave it ' +
+        'empty. Accuracy of transcription matters more than completeness.',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            fileBlock,
+            {
+              type: 'text',
+              text: buildPrompt(countries, lineItems, docKind),
+            },
+          ],
+        },
+      ],
+    })
+
+    const text = res.content.find((b) => b.type === 'text')?.text || '{}'
+    const data = JSON.parse(text)
+
+    // Los impuestos que no existen en la factura van vacíos, NUNCA en 0 (un 0 en el
+    // tablero parece un dato leído). El prompt ya lo pide; esto lo garantiza.
+    const zeroed = blankZeros(data)
+    if (zeroed.length) console.log('[extractor] impuestos en 0 → vacío:', zeroed.join(', '))
+
+    // Capa determinística: en PDFs con texto, corrige los códigos largos (chave, CUFE,
+    // CAE, UUID) que el LLM pudo transcribir mal y las fechas que pudo dar vuelta
+    // (02/09 leído como 9 de febrero). Gratis, exacto. No aplica a fotos.
+    if (mediaType === 'application/pdf') {
+      try {
+        const { codes, dates, pv } = await reconcileCodes(data, bytes(), fields, [...DATE_FIELDS])
+        if (codes.length) console.log('[extractor] códigos corregidos desde el texto del PDF:', codes.join(', '))
+        if (dates.length) console.log('[extractor] fechas dadas vuelta corregidas desde el texto del PDF:', dates.join(', '))
+        if (pv) console.log(`[extractor] punto de venta ajustado al ancho impreso: ${pv}`)
+      } catch (e) { console.warn('[extractor] reconcile contra el PDF falló:', e.message) }
+    }
+
+    // Enriquecimiento por país (packs): el QR de la factura pisa los campos fiscales
+    // con el dato EXACTO (ej. AR: CUIT, número, total, CAE del QR de AFIP). Ground
+    // truth determinístico. El QR se decodifica recién acá (después de la IA) para no
+    // sumar los dos picos de memoria.
+    // Un remito no tiene QR de AFIP (lleva CAI de imprenta), así que ni se intenta:
+    // decodificarlo cuesta memoria y tiempo a cambio de nada.
+    const qr = anyPack(countries, docKind) && usaQr(docKind)
+      ? await decodeInvoiceQr(qrBase64 || bytes(), qrMediaType || mediaType).catch(() => null)
+      : null
+    const enriched = await enrichAll(data, countries, { fileBase64: qrBase64 || bytes(), mediaType: qrMediaType || mediaType, qr }, docKind)
+
+    return { data, usage: res.usage, model, warnings: enriched?.warnings || [] }
+  } finally {
+    if (uploadedFileId) await borrarArchivo(uploadedFileId)
   }
-
-  // Enriquecimiento por país (packs): el QR de la factura pisa los campos fiscales
-  // con el dato EXACTO (ej. AR: CUIT, número, total, CAE del QR de AFIP). Ground
-  // truth determinístico. El QR se decodifica recién acá (después de la IA) para no
-  // sumar los dos picos de memoria.
-  // Un remito no tiene QR de AFIP (lleva CAI de imprenta), así que ni se intenta:
-  // decodificarlo cuesta memoria y tiempo a cambio de nada.
-  const qr = anyPack(countries, docKind) && usaQr(docKind)
-    ? await decodeInvoiceQr(qrBase64 || fileBase64, qrMediaType || mediaType).catch(() => null)
-    : null
-  const enriched = await enrichAll(data, countries, { fileBase64: qrBase64 || fileBase64, mediaType: qrMediaType || mediaType, qr }, docKind)
-
-  return { data, usage: res.usage, model, warnings: enriched?.warnings || [] }
 }
