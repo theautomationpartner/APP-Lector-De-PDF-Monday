@@ -80,11 +80,22 @@ export function normalizarTipoDoc(valor) {
   }).join(' ')
 }
 
+// El rol va en el system prompt (recomendación de Anthropic) y explica el PORQUÉ
+// de la regla principal: un dato inventado es peor que uno vacío. Con el motivo
+// el modelo generaliza a los casos que no enumeramos. Exportado para que el banco
+// de prueba use EXACTAMENTE el mismo texto que producción.
+export const SYSTEM_PROMPT =
+  'You are a fiscal-document data extractor working for an accounting firm. What you return is loaded ' +
+  'straight into the client\'s books, unreviewed. A blank field is visible and gets filled in by hand; ' +
+  'a wrong number gets booked and nobody ever notices. So an invented value is far worse than an empty ' +
+  'one. Never guess, never infer, never compute: if you cannot SEE it printed on the document, leave it ' +
+  'empty. Accuracy of transcription matters more than completeness.'
+
 // Esquema JSON (catálogo + detected_country) para el set de campos dado. Se arma
 // por llamada porque los campos dependen de los países configurados en el tablero.
 // lineItems: agrega el array de renglones (solo si el tablero activó los subítems
 // — extraerlos cuesta tokens de salida extra, no se paga si nadie lo usa).
-function buildSchema(fields, lineItems = false, kind = 'fiscal') {
+export function buildSchema(fields, lineItems = false, kind = 'fiscal') {
   // PRIMERA propiedad a propósito: structured outputs genera las claves en el orden
   // del esquema, así que acá el modelo transcribe los renglones críticos ANTES de
   // completar nada. Es la técnica de "citar antes de responder" que recomienda
@@ -265,12 +276,7 @@ export async function extractInvoice(fileBase64, mediaType = 'application/pdf', 
       // El rol va en el system prompt (recomendación de Anthropic) y explica el PORQUÉ
       // de la regla principal: un dato inventado es peor que uno vacío. Con el motivo
       // el modelo generaliza a los casos que no enumeramos.
-      system:
-        'You are a fiscal-document data extractor working for an accounting firm. What you return is loaded ' +
-        'straight into the client\'s books, unreviewed. A blank field is visible and gets filled in by hand; ' +
-        'a wrong number gets booked and nobody ever notices. So an invented value is far worse than an empty ' +
-        'one. Never guess, never infer, never compute: if you cannot SEE it printed on the document, leave it ' +
-        'empty. Accuracy of transcription matters more than completeness.',
+      system: SYSTEM_PROMPT,
       messages: [
         {
           role: 'user',
