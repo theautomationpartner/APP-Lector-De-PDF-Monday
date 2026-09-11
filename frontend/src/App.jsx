@@ -141,6 +141,10 @@ export default function App() {
   const [docKind, setDocKind] = useState('fiscal')
   // Tipo al que se quiere cambiar, esperando confirmación. null = no hay pregunta.
   const [kindPend, setKindPend] = useState(null)
+  // ¿El tipo ya lo eligió alguien (o lo sabemos por la plantilla)? En un tablero nuevo
+  // que no es nuestro NO se asume "Facturas": el usuario elige, y hasta entonces no
+  // se muestra ni el país ni el mapeo (un remito y una factura no comparten campos).
+  const [kindElegido, setKindElegido] = useState(false)
   // Tablero sin mapeo guardado, esperando a que lleguen las columnas para premapear.
   const [porMapear, setPorMapear] = useState(null)
   const [dedupEnabled, setDedupEnabled] = useState(false)
@@ -165,7 +169,9 @@ export default function App() {
   const retryRef = useRef(0)   // reintentos consumidos del guardado actual
   // Selector "¿Qué querés cargar?": paquetes por capa (básico/contable/completo) + ajuste fino.
   const [selectedFields, setSelectedFields] = useState([])
-  const [preset, setPreset] = useState('accounting')
+  // 'custom' de entrada: en un tablero nuevo no se pre-elige ningún paquete (antes
+  // venía "Contable" y al elegir el país medio mapeo aparecía como "Crear columna").
+  const [preset, setPreset] = useState('custom')
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [subMode, setSubMode] = useState('off') // subítems: off | basic | full | custom
   const [guideStep, setGuideStep] = useState(1) // pestaña de la guía visual del Paso 2
@@ -255,6 +261,7 @@ export default function App() {
       // pre-mapeo ya había corrido, pero el autoguardado escribía docKind "fiscal"
       // y los renglones con las claves de factura.
       setDocKind(cfg.docKind === 'remito' ? 'remito' : 'fiscal')
+      setKindElegido(!!cfg.docKindSet)
       setMapping(cfg.mapping || {})
       setFileColumnId(cfg.fileColumnId || '')
       setStatusColumnId(cfg.statusColumnId || '')
@@ -275,10 +282,13 @@ export default function App() {
         savedLiRef.current = cfg.lineItemsMapping
         setLiMap({ ...emptyLi(cfg.docKind), ...cfg.lineItemsMapping })
         setSubMode(subModeFromLi(cfg.lineItemsMapping, SUB_METRICS_BY_KIND[cfg.docKind] || SUB_METRICS_BY_KIND.fiscal))
-      } else { savedLiRef.current = null; setLiMap(BASIC_LI); setSubMode('basic') }
+      } else { savedLiRef.current = null; setLiMap(emptyLi(cfg.docKind)); setSubMode('off') }
+      // Sin mapeo guardado, NADA elegido: cada campo arranca en "No cargar" y el
+      // usuario decide. (Antes se pre-elegía el paquete "Contable" y los campos sin
+      // columna aparecían como "Crear columna nueva" sin que nadie lo pidiera.)
       const mapped = Object.keys(cfg.mapping || {})
-      setSelectedFields(mapped.length ? mapped : fieldsForTier('accounting', cfg.countries || []))
-      setPreset(mapped.length ? 'custom' : 'accounting')
+      setSelectedFields(mapped)
+      setPreset('custom')
       setDirty(false)
     }
     ;(async () => {
@@ -295,7 +305,7 @@ export default function App() {
       } catch { /* sin config previa */ }
       if (cancelled) return
       if (cfg) apply(cfg)
-      else { savedLiRef.current = null; setSelectedFields(fieldsForTier('accounting', [])); setLiMap(BASIC_LI); setSubMode('basic') }
+      else { savedLiRef.current = null; setSelectedFields([]); setLiMap(emptyLi('fiscal')); setSubMode('off') }
       const savedMapping = cfg?.mapping && Object.keys(cfg.mapping).length > 0
       setHasSetup(!!savedMapping)
       setConfigLoaded(true)
@@ -414,6 +424,7 @@ export default function App() {
   // corresponden. Se avisa antes de borrar nada.
   const aplicarTipo = (k) => {
     setDocKind(k)
+    setKindElegido(true)
     // El mapeo viejo no sirve (los campos son otros), pero si el tablero es nuestra
     // plantilla las columnas del tipo NUEVO ya existen: se mapean solas. Sin esto,
     // pasar la plantilla de remitos a "Remitos" la dejaba en cero.
@@ -427,10 +438,12 @@ export default function App() {
     touch()
   }
   const cambiarTipo = (k) => {
-    if (k === docKind) return
+    // Sin tipo elegido todavía, "Facturas" también se aplica (docKind arranca en
+    // 'fiscal' por dentro, pero nadie lo eligió).
+    if (kindElegido && k === docKind) return
     // Si todavía no mapeó nada, no hay nada que perder: se cambia sin preguntar.
     const hayMapeo = Object.values(mapping).some(Boolean) || Object.values(liMap).some(Boolean)
-    if (!hayMapeo) return aplicarTipo(k)
+    if (!kindElegido || !hayMapeo) return aplicarTipo(k)
     setKindPend(k)
   }
   const setLi = (k, v) => {
@@ -709,6 +722,8 @@ export default function App() {
     setFileColumnId(fileCol)
     setStatusColumnId(statusCol)
     if (hayMapeo) {
+      // Plantilla nuestra: el tipo lo sabemos por sus columnas, no hace falta preguntar.
+      setKindElegido(true)
       setMapping(auto)
       // selectedFields también: al guardar, cleanMapping() descarta lo que no esté acá.
       setSelectedFields(Object.keys(auto))
@@ -920,31 +935,39 @@ export default function App() {
                     {['fiscal', 'remito'].map((k) => (
                       <button
                         type="button" key={k}
-                        className={`chip ${docKind === k ? 'on' : ''}`}
+                        className={`chip ${kindElegido && docKind === k ? 'on' : ''}`}
                         onClick={() => cambiarTipo(k)}
-                      >{t('kind.' + k)}{docKind === k && <span className="chip-ck">✓</span>}</button>
+                      >{t('kind.' + k)}{kindElegido && docKind === k && <span className="chip-ck">✓</span>}</button>
                     ))}
                   </div>
+                  {/* Tablero nuevo: primero el tipo. Hasta elegirlo no hay país ni mapeo. */}
+                  {!previewMode && !kindElegido && (
+                    <div className="pick-country">{t('kind.pickFirst')}</div>
+                  )}
 
-                  <div className="q-label" style={{ marginTop: 16 }}>
-                    {t('step1.countries')} <span className="q-hint">{t('step1.countriesHint')}</span>
-                    {tipEl(t('step1.countriesTip'))}
-                  </div>
-                  <div className="chip-select">
-                    {[...new Set([...LAUNCH_COUNTRIES, ...countries])].map((c) => (
-                      <button
-                        type="button" key={c}
-                        className={`chip ${countries.includes(c) ? 'on' : ''}`}
-                        onClick={() => toggleCountry(c)}
-                      >{t('country.' + c)}{countries.includes(c) && <span className="chip-ck">✓</span>}</button>
-                    ))}
-                  </div>
+                  {(kindElegido || previewMode) && (
+                    <>
+                      <div className="q-label" style={{ marginTop: 16 }}>
+                        {t('step1.countries')} <span className="q-hint">{t('step1.countriesHint')}</span>
+                        {tipEl(t('step1.countriesTip'))}
+                      </div>
+                      <div className="chip-select">
+                        {[...new Set([...LAUNCH_COUNTRIES, ...countries])].map((c) => (
+                          <button
+                            type="button" key={c}
+                            className={`chip ${countries.includes(c) ? 'on' : ''}`}
+                            onClick={() => toggleCountry(c)}
+                          >{t('country.' + c)}{countries.includes(c) && <span className="chip-ck">✓</span>}</button>
+                        ))}
+                      </div>
+                    </>
+                  )}
                   {/* Sin país elegido → no se muestra la config (el producto es por país). */}
-                  {!previewMode && countries.length === 0 && (
+                  {!previewMode && kindElegido && countries.length === 0 && (
                     <div className="pick-country">{t('step1.pickCountry')}</div>
                   )}
                   {/* ¿Qué querés cargar? — paquetes + preview + ajuste fino */}
-                  {!previewMode && countries.length > 0 && (
+                  {!previewMode && kindElegido && countries.length > 0 && (
                     <div style={{ marginTop: 18 }}>
                       {/* UNA sola lista: cada dato de la factura → su columna. Sin vista
                           previa alternativa, sin paquetes, sin bloque aparte de renglones.

@@ -207,6 +207,9 @@ app.get('/api/config/:boardId', async (req, res) => {
       filterTaxIds: Array.isArray(cfg?.filter_tax_ids) ? cfg.filter_tax_ids : [],
       lineItemsMapping: cfg?.line_items_mapping || {},
       docKind: cfg?.doc_kind || 'fiscal',
+      // ¿Este tablero ya tiene un tipo guardado? Sin fila, 'fiscal' es solo el default
+      // de la columna: la pantalla de Configuración le pide al usuario que elija.
+      docKindSet: !!cfg,
       // Para la vista "Cargar comprobante": qué etiqueta dispara la lectura (aprendida
       // de la receta o elegida por el usuario) y cuáles son las nuestras.
       triggerLabel: cfg?.trigger_label || '',
