@@ -41,6 +41,18 @@ async function borrarArchivo(fileId) {
   }
 }
 
+// Parámetros que cambian según el modelo. Haiku 4.5 acepta temperature y no tiene
+// thinking adaptativo. Los modelos nuevos (Sonnet 5, Opus 5, familia 4.6+) tiran
+// 400 si les mandás temperature, y vienen con thinking prendido que consume el
+// max_tokens razonando: el JSON sale truncado y la lectura se pierde entera.
+// (Ese fue el motivo por el que la prueba de Sonnet de julio 2026 no funcionó.)
+function paramsDelModelo(model) {
+  const esHaikuOViejo = /haiku|claude-3|sonnet-4-5|sonnet-3/.test(String(model))
+  return esHaikuOViejo
+    ? { temperature: 0 }
+    : { thinking: { type: 'disabled' } }
+}
+
 // Empareja el FORMATO del tipo de documento. Al modelo le pedimos el tipo "tal
 // como está impreso" (y está bien: así no inventa un tipo que el papel no dice),
 // pero cada proveedor lo imprime a su manera — "REMITO", "Remito", "FACTURA" — y
@@ -242,7 +254,13 @@ export async function extractInvoice(fileBase64, mediaType = 'application/pdf', 
       // Leer una factura es una tarea determinística: el mismo papel tiene que dar
       // siempre el mismo resultado. Por defecto la API va en 1.0 (con variabilidad),
       // que es lo que se quiere para escribir, no para transcribir.
-      temperature: 0,
+      //
+      // OJO: los modelos nuevos (Sonnet 5, Opus 5, la familia 4.6+) RECHAZAN
+      // temperature con un 400, y traen "thinking" adaptativo prendido que se come
+      // el max_tokens razonando y devuelve el JSON truncado. Por eso van sin
+      // temperature y con el thinking apagado explícitamente. Haiku 4.5 no: usa
+      // temperature normal y no tiene thinking adaptativo.
+      ...paramsDelModelo(model),
       output_config: { format: { type: 'json_schema', schema } },
       // El rol va en el system prompt (recomendación de Anthropic) y explica el PORQUÉ
       // de la regla principal: un dato inventado es peor que uno vacío. Con el motivo
