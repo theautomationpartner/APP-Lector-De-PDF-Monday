@@ -294,41 +294,54 @@ export async function extractInvoice(fileBase64, mediaType = 'application/pdf', 
     const text = res.content.find((b) => b.type === 'text')?.text || '{}'
     const data = JSON.parse(text)
 
-    // Los impuestos que no existen en la factura van vacíos, NUNCA en 0 (un 0 en el
-    // tablero parece un dato leído). El prompt ya lo pide; esto lo garantiza.
-    const zeroed = blankZeros(data)
-    if (zeroed.length) console.log('[extractor] impuestos en 0 → vacío:', zeroed.join(', '))
-
-    // Capa determinística: en PDFs con texto, corrige los códigos largos (chave, CUFE,
-    // CAE, UUID) que el LLM pudo transcribir mal y las fechas que pudo dar vuelta
-    // (02/09 leído como 9 de febrero). Gratis, exacto. No aplica a fotos.
-    if (mediaType === 'application/pdf') {
-      try {
-        const { codes, dates, pv } = await reconcileCodes(data, bytes(), fields, [...DATE_FIELDS])
-        if (codes.length) console.log('[extractor] códigos corregidos desde el texto del PDF:', codes.join(', '))
-        if (dates.length) console.log('[extractor] fechas dadas vuelta corregidas desde el texto del PDF:', dates.join(', '))
-        if (pv) console.log(`[extractor] punto de venta ajustado al ancho impreso: ${pv}`)
-      } catch (e) { console.warn('[extractor] reconcile contra el PDF falló:', e.message) }
-    }
-
-    // Enriquecimiento por país (packs): el QR de la factura pisa los campos fiscales
-    // con el dato EXACTO (ej. AR: CUIT, número, total, CAE del QR de AFIP). Ground
-    // truth determinístico. El QR se decodifica recién acá (después de la IA) para no
-    // sumar los dos picos de memoria.
-    // Un remito no tiene QR de AFIP (lleva CAI de imprenta), así que ni se intenta:
-    // decodificarlo cuesta memoria y tiempo a cambio de nada.
-    const qr = anyPack(countries, docKind) && usaQr(docKind)
-      ? await decodeInvoiceQr(qrBase64 || bytes(), qrMediaType || mediaType).catch(() => null)
-      : null
-    const enriched = await enrichAll(data, countries, { fileBase64: qrBase64 || bytes(), mediaType: qrMediaType || mediaType, qr }, docKind)
-
-    // Al final de todo: después del enrich, para que si el pack del país ya le puso
-    // el nombre canónico (facturas con QR), esto no lo pise con otra cosa — solo
-    // empareja el formato de lo que haya quedado.
-    data.document_type = normalizarTipoDoc(data.document_type)
-
-    return { data, usage: res.usage, model, warnings: enriched?.warnings || [] }
+    const { warnings } = await postProcesar(data, { mediaType, countries, docKind, leerBytes: bytes, qrBase64, qrMediaType })
+    return { data, usage: res.usage, model, warnings }
   } finally {
     if (uploadedFileId) await borrarArchivo(uploadedFileId)
   }
+}
+
+// Todo lo que corre DESPUÉS de la IA: capas determinísticas (sin costo) que
+// corrigen o completan lo que leyó el modelo. Está separado de extractInvoice para
+// que el banco de prueba pueda pasar la salida de CUALQUIER lector —la API real o
+// un agente de Claude Code— por exactamente el mismo camino que producción. Si no,
+// se compararía lo crudo del agente contra lo corregido de producción.
+// Modifica `data` en el lugar. leerBytes() devuelve el archivo (Buffer o base64).
+export async function postProcesar(data, { mediaType, countries = [], docKind = 'fiscal', leerBytes, qrBase64, qrMediaType }) {
+  const fields = fieldsForCountries(countries, docKind)
+
+  // Los impuestos que no existen en la factura van vacíos, NUNCA en 0 (un 0 en el
+  // tablero parece un dato leído). El prompt ya lo pide; esto lo garantiza.
+  const zeroed = blankZeros(data)
+  if (zeroed.length) console.log('[extractor] impuestos en 0 → vacío:', zeroed.join(', '))
+
+  // Capa determinística: en PDFs con texto, corrige los códigos largos (chave, CUFE,
+  // CAE, UUID) que el LLM pudo transcribir mal y las fechas que pudo dar vuelta
+  // (02/09 leído como 9 de febrero). Gratis, exacto. No aplica a fotos.
+  if (mediaType === 'application/pdf') {
+    try {
+      const { codes, dates, pv } = await reconcileCodes(data, leerBytes(), fields, [...DATE_FIELDS])
+      if (codes.length) console.log('[extractor] códigos corregidos desde el texto del PDF:', codes.join(', '))
+      if (dates.length) console.log('[extractor] fechas dadas vuelta corregidas desde el texto del PDF:', dates.join(', '))
+      if (pv) console.log(`[extractor] punto de venta ajustado al ancho impreso: ${pv}`)
+    } catch (e) { console.warn('[extractor] reconcile contra el PDF falló:', e.message) }
+  }
+
+  // Enriquecimiento por país (packs): el QR de la factura pisa los campos fiscales
+  // con el dato EXACTO (ej. AR: CUIT, número, total, CAE del QR de AFIP). Ground
+  // truth determinístico. El QR se decodifica recién acá (después de la IA) para no
+  // sumar los dos picos de memoria.
+  // Un remito no tiene QR de AFIP (lleva CAI de imprenta), así que ni se intenta:
+  // decodificarlo cuesta memoria y tiempo a cambio de nada.
+  const qr = anyPack(countries, docKind) && usaQr(docKind)
+    ? await decodeInvoiceQr(qrBase64 || leerBytes(), qrMediaType || mediaType).catch(() => null)
+    : null
+  const enriched = await enrichAll(data, countries, { fileBase64: qrBase64 || leerBytes(), mediaType: qrMediaType || mediaType, qr }, docKind)
+
+  // Al final de todo: después del enrich, para que si el pack del país ya le puso
+  // el nombre canónico (facturas con QR), esto no lo pise con otra cosa — solo
+  // empareja el formato de lo que haya quedado.
+  data.document_type = normalizarTipoDoc(data.document_type)
+
+  return { warnings: enriched?.warnings || [] }
 }
