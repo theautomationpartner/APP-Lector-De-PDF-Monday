@@ -26,6 +26,17 @@ const SIN_ARRANCAR_MS = 30_000
 // Estados en los que la lectura ya terminó: se deja de preguntar.
 const FINALES = new Set(['done', 'warned', 'error', 'duplicate', 'ignored', 'gone'])
 const MAX_RECIENTES = 12
+// Nombre del ítem mientras espera el archivo, en los dos idiomas: así se reconocen
+// las subidas a medias de cualquiera, no solo las de este navegador.
+const PLACEHOLDERS = new Set([makeT('es')('up.placeholderName'), makeT('en')('up.placeholderName')])
+// Una subida propia pasa a "abandonada" si su pestaña deja de latir este tiempo.
+const LATIDO_MS = 2000
+const SIN_LATIDO_MS = 6000
+// Y una ajena, pasado este tiempo desde que se creó el ítem. Más que el tope de
+// espera de la vista (15 min): a esa altura la dueña ya la dio por perdida.
+const AJENA_VIEJA_MS = 16 * 60_000
+// Identifica a ESTA pestaña: dos pestañas abiertas no se pisan las subidas.
+const YO = Math.random().toString(36).slice(2)
 
 const dormir = (ms) => new Promise((r) => setTimeout(r, ms))
 // monday.api a veces RESUELVE con el error adentro en vez de fallar: sin este chequeo,
@@ -76,6 +87,17 @@ export default function Cargar() {
   useEffect(() => {
     const off = monday.listen('context', (r) => setCtx(r.data))
     return () => { try { off() } catch { /* noop */ } }
+  }, [])
+
+  // Soltar un archivo sobre la vista: el navegador lo abriría ENCIMA de la vista (y
+  // se pierde la pantalla). No se puede subir desde acá — el archivo va directo a
+  // monday por su ventana —, así que se frena y se explica dónde soltarlo.
+  useEffect(() => {
+    const frenar = (e) => { e.preventDefault() }
+    const soltar = (e) => { e.preventDefault(); setAviso({ tipo: 'info', texto: 'drop' }) }
+    window.addEventListener('dragover', frenar)
+    window.addEventListener('drop', soltar)
+    return () => { window.removeEventListener('dragover', frenar); window.removeEventListener('drop', soltar) }
   }, [])
 
   // 2) Tablero + config + uso. Todo antes de dejar subir nada.
@@ -141,21 +163,56 @@ export default function Cargar() {
     return 'other'
   }
 
-  // 4) Ítems que quedaron vacíos (se cerró la vista con la ventana de subida abierta):
-  //    si pasaron 5 minutos y siguen sin archivo, se borran. Así no queda basura.
+  // 4) Subidas que quedaron a medias. Pasa cuando alguien se va de la vista con la
+  //    ventana de subida abierta (monday recarga la vista al volver) o cierra el
+  //    navegador. Dos fuentes:
+  //    · las de ESTE navegador cuya pestaña dejó de latir (se fue a mitad de camino);
+  //    · cualquier "⏳ Subiendo…" del tablero con más de 16 min (otra persona, otra
+  //      computadora, o alguien que nunca volvió).
+  //    Sin archivo o con uno que no sirve → se borra. Con un archivo que sirve → se
+  //    termina: nombre + etiqueta, y arranca la lectura. Nunca queda a medias.
+  const barrido = useRef(false)
   useEffect(() => {
-    if (!plan?.fileCol) return
-    const pend = leer(kPend, [])
-    const viejos = pend.filter((p) => Date.now() - p.at > 5 * 60_000)
-    if (!viejos.length) return
+    if (!plan?.label || barrido.current) return
+    barrido.current = true
     ;(async () => {
-      for (const p of viejos) {
-        const a = await archivosDe(p.id).catch(() => undefined)
-        if (Array.isArray(a) && !a.length) await api(`mutation { delete_item(item_id: ${Number(p.id)}) { id } }`).catch(() => {})
+      const propias = leer(kPend, [])
+        .filter((p) => p.owner !== YO && Date.now() - (p.beat || p.at) > SIN_LATIDO_MS)
+        .map((p) => p.id)
+      let ajenas = []
+      try {
+        const r = await api(`query { boards(ids: [${Number(boardId)}]) { items_page(limit: 50, query_params: { rules: [{ column_id: "name", compare_value: ["⏳"], operator: contains_text }] }) { items { id name created_at } } } }`)
+        ajenas = (r?.data?.boards?.[0]?.items_page?.items || [])
+          .filter((i) => PLACEHOLDERS.has(i.name) && Date.now() - new Date(i.created_at).getTime() > AJENA_VIEJA_MS)
+          .map((i) => String(i.id))
+      } catch { /* sin barrido del tablero: igual se atienden las de este navegador */ }
+      const ids = [...new Set([...propias, ...ajenas])]
+      if (!ids.length) return
+      const terminados = []
+      let borrados = 0
+      for (const id of ids) {
+        const res = await terminar(id).catch(() => null)
+        if (res?.ok) terminados.push(res.ok)
+        else if (res?.borrado) borrados++
       }
-      guardar(kPend, leer(kPend, []).filter((p) => !viejos.some((v) => v.id === p.id)))
+      guardar(kPend, leer(kPend, []).filter((p) => !ids.includes(p.id)))
+      if (terminados.length) setAviso({ tipo: 'info', texto: t('up.resumed', { names: terminados.join(', ') }) })
+      else if (borrados) setAviso({ tipo: 'info', texto: t('up.cleaned', { n: borrados }) })
     })()
-  }, [plan?.fileCol?.id])
+  }, [plan?.label])
+
+  // Latido de la subida en curso: mientras esta pestaña espera el archivo, marca que
+  // sigue viva. Si deja de marcar, la próxima vez que se abra la vista se la atiende.
+  useEffect(() => {
+    if (paso !== 'waiting' && paso !== 'checking') return
+    const latir = () => {
+      const id = itemEnCurso.current
+      if (id) guardar(kPend, leer(kPend, []).map((p) => (p.id === id ? { ...p, beat: Date.now() } : p)))
+    }
+    latir()
+    const h = setInterval(latir, LATIDO_MS)
+    return () => clearInterval(h)
+  }, [paso])
 
   // 5) Seguimiento de los últimos cargados: pregunta el estado cada 4 s mientras
   //    alguno siga en curso (y como mucho 10 min después de mandarlo).
@@ -241,7 +298,7 @@ export default function Cargar() {
       return
     }
     itemEnCurso.current = id
-    guardar(kPend, [...leer(kPend, []), { id, at: Date.now() }])
+    guardar(kPend, [...leer(kPend, []), { id, at: Date.now(), beat: Date.now(), owner: YO }])
     setPaso('waiting')
 
     // La ventana de subida es de monday. Si no se puede abrir, no queda nada creado.
@@ -265,21 +322,48 @@ export default function Cargar() {
     if (!cancelado.current && itemEnCurso.current === id) descartar(id, t('up.err.timeout'))
   }
 
-  async function revisarYDisparar(id, arch) {
-    // El archivo recién se ve acá (después de la ventana de monday): lo que no se
-    // pueda leer se borra en vez de dejar un ítem que va a terminar en error.
-    if (arch.length > 1) return descartar(id, t('up.err.many', { n: arch.length }))
+  // El archivo recién se ve después de la ventana de monday. Devuelve el motivo por
+  // el que NO se puede leer, o null si sirve. Lo que no sirve se borra en vez de
+  // dejar un ítem que va a terminar en error.
+  function problemaDe(arch) {
+    if (arch.length > 1) return t('up.err.many', { n: arch.length })
     const f = arch[0]
-    if (f.ext === 'link') return descartar(id, t('up.err.link'))
-    if (f.ext === 'heic' || f.ext === 'heif') return descartar(id, t('up.err.heic', { name: f.name }))
-    if (!LEIBLES.has(f.ext)) return descartar(id, t('up.err.type', { name: f.name }))
-    if (f.size > MAX_MB * 1048576) return descartar(id, t('up.err.big', { name: f.name, mb: (f.size / 1048576).toFixed(1) }))
+    if (f.ext === 'link') return t('up.err.link')
+    if (f.ext === 'heic' || f.ext === 'heif') return t('up.err.heic', { name: f.name })
+    if (!LEIBLES.has(f.ext)) return t('up.err.type', { name: f.name })
+    if (f.size > MAX_MB * 1048576) return t('up.err.big', { name: f.name, mb: (f.size / 1048576).toFixed(1) })
+    return null
+  }
 
-    // Nombre del archivo + etiqueta que dispara, en UNA sola escritura. Sin
-    // create_labels_if_missing: si la etiqueta no existe, inventarla no dispararía nada.
+  // Nombre del archivo + etiqueta que dispara, en UNA sola escritura (nunca queda
+  // renombrado sin disparar, ni disparado con "⏳ Subiendo…"). Sin
+  // create_labels_if_missing: si la etiqueta no existe, inventarla no dispararía nada.
+  async function disparar(id, f) {
+    await api(`mutation ($b: ID!, $i: ID!, $v: JSON!) { change_multiple_column_values(board_id: $b, item_id: $i, column_values: $v) { id } }`,
+      { b: String(boardId), i: id, v: JSON.stringify({ name: f.name, [plan.statusCol.id]: { label: plan.label } }) })
+    setRecientes((prev) => {
+      const next = [{ id, name: f.name, sentAt: Date.now(), texto: plan.label, kind: 'sent' }, ...prev.filter((x) => x.id !== id)].slice(0, MAX_RECIENTES)
+      guardar(kRec, next)
+      return next
+    })
+  }
+
+  // Cierra una subida a medias: { ok: nombre } si se mandó a leer, { borrado } si se
+  // borró (vacía o con un archivo que no sirve), null si el ítem ya no existe.
+  async function terminar(id) {
+    const arch = await archivosDe(id)
+    if (arch === null) return null
+    if (!arch.length || problemaDe(arch)) { await borrar(id); return { borrado: true } }
+    await disparar(id, arch[0])
+    return { ok: arch[0].name }
+  }
+
+  async function revisarYDisparar(id, arch) {
+    const problema = problemaDe(arch)
+    if (problema) return descartar(id, problema)
+    const f = arch[0]
     try {
-      await api(`mutation ($b: ID!, $i: ID!, $v: JSON!) { change_multiple_column_values(board_id: $b, item_id: $i, column_values: $v) { id } }`,
-        { b: String(boardId), i: id, v: JSON.stringify({ name: f.name, [plan.statusCol.id]: { label: plan.label } }) })
+      await disparar(id, f)
     } catch (e) {
       // El archivo es válido: el ítem se deja (tiene el archivo del usuario) y se avisa.
       olvidarPendiente(id); itemEnCurso.current = null; setPaso(null)
@@ -289,11 +373,6 @@ export default function Cargar() {
     itemEnCurso.current = null
     setPaso(null)
     setAviso({ tipo: 'ok', texto: t('up.sentOk', { name: f.name }) })
-    setRecientes((prev) => {
-      const next = [{ id, name: f.name, sentAt: Date.now(), texto: plan.label, kind: 'sent' }, ...prev].slice(0, MAX_RECIENTES)
-      guardar(kRec, next)
-      return next
-    })
   }
 
   async function usarEtiqueta() {
@@ -359,7 +438,7 @@ export default function Cargar() {
         </div>
       )}
 
-      {aviso && <div className={`up-aviso ${aviso.tipo}`}>{aviso.texto}</div>}
+      {aviso && <div className={`up-aviso ${aviso.tipo}`}>{aviso.texto === 'drop' ? t('up.dropHint', { btn: t(kind === 'remito' ? 'up.btn.remito' : 'up.btn.fiscal') }) : aviso.texto}</div>}
 
       {recientes.length > 0 && (
         <div className="up-card up-list">
