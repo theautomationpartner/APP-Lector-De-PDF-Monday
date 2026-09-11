@@ -135,3 +135,10 @@ ALTER TABLE installations ADD COLUMN IF NOT EXISTS board_item_id BIGINT;
 ALTER TABLE installations ADD COLUMN IF NOT EXISTS account_name TEXT;
 ALTER TABLE installations ADD COLUMN IF NOT EXISTS account_slug TEXT;
 ALTER TABLE extractions   ADD COLUMN IF NOT EXISTS board_item_id BIGINT;
+-- Lo que monday manda en cada webhook de lifecycle (2026-09-11). Antes se tiraba
+-- todo menos el account_id: una cuenta que instalaba y no leía nunca quedaba como
+-- "Cuenta 32386966" sin forma de saber quién era ni a quién escribirle.
+ALTER TABLE installations ADD COLUMN IF NOT EXISTS installer_email  TEXT;    -- quién instaló (contacto)
+ALTER TABLE installations ADD COLUMN IF NOT EXISTS installer_name   TEXT;
+ALTER TABLE installations ADD COLUMN IF NOT EXISTS monday_tier      TEXT;    -- plan de monday de la cuenta
+ALTER TABLE installations ADD COLUMN IF NOT EXISTS monday_max_users INTEGER; -- tamaño de la cuenta

@@ -9,20 +9,19 @@
 //     no se registraban hasta el 11/09/2026), con su fecha real.
 //  3. Board 2: re-engancha lecturas cuyo ítem SÍ se creó pero la DB no guardó el id
 //     (pasó cuando el proceso se cayó justo entre las dos cosas).
+//  4. Board 2: completa "Campos" en las lecturas viejas (la DB lo tiene desde
+//     siempre; tipo, avisos, duración y archivo recién desde el 11/09/2026).
+//
+// Corre también todos los días por cron (06:00 AR) para que la etapa del cliente
+// ("Inactiva") y "Facturas mes" no queden viejos en un cliente que no lee.
 import { query } from '../db.mjs'
 import { config } from '../config.mjs'
-import { refreshClientRow } from '../internal-board.mjs'
+import { refreshClientRow, C2 } from '../internal-board.mjs'
 
 const DRY = process.argv.includes('--dry')
 const TOKEN = config.mondayInternalToken
 if (!TOKEN) { console.error('Falta MONDAY_INTERNAL_TOKEN'); process.exit(1) }
 const B2 = '18421733614'
-const C2 = {
-  fecha: 'date_mm57jzrr', acct: 'text_mm571x72', pais: 'text_mm57aavt',
-  estado: 'color_mm57s7bs', modelo: 'text_mm57kjp', tin: 'numeric_mm57j31m',
-  tout: 'numeric_mm57jdhq', cliente: 'board_relation_mm57zmw5',
-  costo: 'numeric_mm57xm69', obs: 'long_text_mm571nk8',
-}
 const PRICES = { 'claude-haiku-4-5': [1, 5], 'claude-sonnet-5': [2, 10], 'claude-opus-4-8': [5, 25] }
 const ESTADO = { ok: 'OK', error: 'Error', duplicate: 'Duplicada', ignored: 'Ignorada' }
 const dstr = (d) => new Date(d).toISOString().slice(0, 10)
@@ -52,20 +51,33 @@ const items = []
 let cursor = null
 do {
   const d = await gql(
-    `query($b:[ID!],$c:String){ boards(ids:$b){ items_page(limit:500, cursor:$c){ cursor items { id column_values(ids:["${C2.acct}","${C2.fecha}","${C2.tin}","${C2.tout}"]) { id text } } } } }`,
+    `query($b:[ID!],$c:String){ boards(ids:$b){ items_page(limit:500, cursor:$c){ cursor items { id column_values(ids:["${C2.acct}","${C2.fecha}","${C2.tin}","${C2.tout}","${C2.campos}"]) { id text } } } } }`,
     { b: [B2], c: cursor },
   )
   const p = d.boards[0].items_page
   items.push(...p.items)
   cursor = p.cursor
 } while (cursor)
-const mapeados = new Set((await query('select board_item_id from extractions where board_item_id is not null')).rows.map((r) => r.board_item_id))
+const conItem = (await query('select board_item_id, fields_written from extractions where board_item_id is not null')).rows
+const mapeados = new Set(conItem.map((r) => r.board_item_id))
+
+// ── 4. "Campos" de las lecturas que ya están en el tablero y no lo tienen.
+const camposEnBoard = Object.fromEntries(items.map((it) => [it.id, it.column_values.find((c) => c.id === C2.campos)?.text || '']))
+const sinCampos = conItem.filter((r) => r.fields_written != null && camposEnBoard[r.board_item_id] === '')
+console.log(`[B2] lecturas sin "Campos" en el tablero: ${sinCampos.length}`)
+for (const r of sinCampos) {
+  if (DRY) continue
+  await gql(
+    `mutation($b:ID!,$i:ID!,$cv:JSON!){ change_multiple_column_values(board_id:$b,item_id:$i,column_values:$cv){ id } }`,
+    { b: B2, i: String(r.board_item_id), cv: JSON.stringify({ [C2.campos]: String(r.fields_written) }) },
+  )
+}
 const sueltos = items.filter((it) => !mapeados.has(it.id)).map((it) => ({
   id: it.id, ...Object.fromEntries(it.column_values.map((c) => [c.id, c.text])),
 }))
 
 const faltan = (await query(
-  `select id, account_id, status, model, input_tokens, output_tokens, detected_country, error, created_at
+  `select id, account_id, status, model, input_tokens, output_tokens, detected_country, error, fields_written, created_at
      from extractions where board_item_id is null order by created_at`,
 )).rows
 
@@ -95,6 +107,7 @@ for (const e of faltan) {
     cv[C2.tout] = String(e.output_tokens || 0)
     cv[C2.costo] = (e.input_tokens / 1e6 * pin + (e.output_tokens || 0) / 1e6 * pout).toFixed(5)
   }
+  if (e.fields_written != null) cv[C2.campos] = String(e.fields_written)
   const obs = e.status === 'ignored' ? 'Ignorada por el filtro del tablero (cargada después por sync-ops-board)' : e.error
   if (obs) cv[C2.obs] = { text: String(obs).slice(0, 500) }
   if (clienteDe[e.account_id]) cv[C2.cliente] = { item_ids: [Number(clienteDe[e.account_id])] }

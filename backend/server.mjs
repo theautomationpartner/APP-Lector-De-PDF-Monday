@@ -15,7 +15,7 @@ import {
   buildColumnValues, writeColumns, postComment, setStatus, getStatusColumnId, getAccountInfo,
   writeLineItemSubitems, renameItem,
 } from './monday.mjs'
-import { saveAccountInfo, runStartupMigrations, getBoardConfig, saveBoardConfig, adoptStatusColumnId, logExtraction, claimInvoiceKey, releaseInvoiceKey, claimSubitems, releaseSubitems, deleteAccountData, getUsage, setAccountPlan, recentReadCounts, saveLanguage, getInstallationLanguage } from './db.mjs'
+import { saveAccountInfo, saveLifecycleInfo, runStartupMigrations, getBoardConfig, saveBoardConfig, adoptStatusColumnId, logExtraction, claimInvoiceKey, releaseInvoiceKey, claimSubitems, releaseSubitems, deleteAccountData, getUsage, setAccountPlan, recentReadCounts, saveLanguage, getInstallationLanguage } from './db.mjs'
 import { planFromSubscription } from './plans.mjs'
 import { cuitValido } from './countries/ar.mjs'
 import { syncReading, syncInstallation } from './internal-board.mjs'
@@ -181,6 +181,10 @@ app.get('/api/config/:boardId', async (req, res) => {
   try {
     const { accountId, claims } = authSession(req)
     await syncPlanFromClaims(accountId, claims) // al abrir la app, refresca el plan
+    // El slug de la cuenta viene en el session token. Es lo único que identifica a
+    // una cuenta que abrió la app pero todavía no leyó nada (el nombre recién llega
+    // con la primera lectura). saveAccountInfo no pisa lo que ya estaba.
+    if (claims?.dat?.slug) void saveAccountInfo(accountId, null, claims.dat.slug).catch(() => {})
     const cfg = await getBoardConfig(accountId, req.params.boardId)
     const countries = cfg?.countries?.length ? cfg.countries : (cfg?.country_override ? [cfg.country_override] : [])
     const currencies = cfg?.currencies?.length ? cfg.currencies : (cfg?.currency_override ? [cfg.currency_override] : [])
@@ -291,6 +295,11 @@ app.post('/monday/extract', async (req, res) => {
   let wrote = false     // true = las columnas ya se escribieron (no liberar la llave)
   let slotHeld = false  // true = esta corrida tiene un cupo de la cola tomado
   let tmpPath = null    // archivo temporal en disco (solo para los PDF grandes)
+  // Solo para el tablero de ops: cuánto tardó y qué archivo era. Se va llenando
+  // a medida que se conoce; meta() lo junta en el momento de registrar.
+  const t0 = Date.now()
+  let archivo = {}
+  const meta = (extra = {}) => ({ ...archivo, ms: Date.now() - t0, ...extra })
   try {
     // 1) Auth: JWT firmado con el Signing Secret de la app.
     const auth = req.headers.authorization
@@ -417,6 +426,7 @@ app.post('/monday/extract', async (req, res) => {
     if (!fresp.ok) throw new UserError(t(lang, 'noPdf'))
     const clen = Number(fresp.headers.get('content-length') || 0)
     console.log(`[extract] archivo item=${itemId} tipo=${file.mediaType} tamaño=${clen ? Math.round(clen / 1024) + 'KB' : 'no declarado'}`)
+    archivo = { mediaType: file.mediaType, bytes: clen }
     if (clen > MAX_FILE_BYTES) throw new UserError(t(lang, 'fileTooBig', { mb: MAX_FILE_MB }))
     // Solo los PDF van por disco. Las fotos ya se achican con sharp a ~300-500 KB,
     // así que nunca son el problema de memoria y no vale la pena complicarlas.
@@ -446,6 +456,7 @@ app.post('/monday/extract', async (req, res) => {
         await once(salida, 'close').catch(() => {})
       }
       console.log(`[extract] descargado a disco ${Math.round(bajado / 1024)}KB item=${itemId} rss=${Math.round(process.memoryUsage().rss / 1048576)}MB`)
+      archivo.bytes = bajado
     } else {
       const partes = []
       let bajado = 0
@@ -459,6 +470,7 @@ app.post('/monday/extract', async (req, res) => {
       }
       buf = Buffer.concat(partes)
       console.log(`[extract] descargado ${Math.round(buf.length / 1024)}KB item=${itemId} rss=${Math.round(process.memoryUsage().rss / 1048576)}MB`)
+      archivo.bytes = buf.length
     }
 
     // FOTOS: se achican antes de mandarlas. Claude reduce las imágenes de su lado a
@@ -514,7 +526,7 @@ app.post('/monday/extract', async (req, res) => {
       const ignId = await logExtraction({ accountId, boardId, itemId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ignored' })
       // Al tablero de ops también: la IA ya corrió, el gasto es real. El motivo va
       // genérico (sin el tipo ni el CUIT): ese tablero es metadata, no contenido.
-      void syncReading({ extractionId: ignId, accountId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ignored', error: 'No es del tipo de documento que carga este tablero' })
+      void syncReading({ extractionId: ignId, accountId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ignored', error: 'No es del tipo de documento que carga este tablero', meta: meta({ docClass: data.document_class }) })
       console.log(`[extract] IGNORADA (no fiscal) item=${itemId} class=${data.document_class} type="${data.document_type}"`)
       return res.status(200).json({ ok: true, ignored: true })
     }
@@ -554,7 +566,7 @@ app.post('/monday/extract', async (req, res) => {
         if (statusColId) await setStatus(shortLivedToken, boardId, itemId, statusColId, labels.ignored)
         await postComment(shortLivedToken, itemId, t(lang, 'ignored', { taxid: subject || '' }))
         const ignId = await logExtraction({ accountId, boardId, itemId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ignored' })
-        void syncReading({ extractionId: ignId, accountId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ignored', error: 'El ID fiscal no está en la lista permitida del tablero' })
+        void syncReading({ extractionId: ignId, accountId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ignored', error: 'El ID fiscal no está en la lista permitida del tablero', meta: meta({ docClass: data.document_class }) })
         console.log(`[extract] IGNORADA (${filterMode} "${subject}" fuera de la lista) item=${itemId}`)
         return res.status(200).json({ ok: true, ignored: true })
       }
@@ -579,7 +591,7 @@ app.post('/monday/extract', async (req, res) => {
         // La IA ya se ejecutó antes del chequeo de duplicado → el gasto es real
         // (y es culpa del usuario, que re-subió la misma factura). Se registra.
         const dupId = await logExtraction({ accountId, boardId, itemId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'duplicate' })
-        void syncReading({ extractionId: dupId, accountId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'duplicate' })
+        void syncReading({ extractionId: dupId, accountId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'duplicate', meta: meta({ docClass: data.document_class }) })
         console.log(`[extract] DUPLICADA item=${itemId} key=${dedupKey} vs item=${owner.item_id}`)
         return res.status(200).json({ ok: true, duplicate: true })
       }
@@ -671,7 +683,8 @@ app.post('/monday/extract', async (req, res) => {
       inputTokens: usage.input_tokens, outputTokens: usage.output_tokens,
       fieldsWritten: Object.keys(cv).length, status: 'ok',
     })
-    void syncReading({ extractionId, accountId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ok' })
+    void syncReading({ extractionId, accountId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ok',
+      meta: meta({ docClass: data.document_class, fields: Object.keys(cv).length, warnings: (warnings || []).length }) })
 
     console.log(`[extract] OK item=${itemId} cols=${Object.keys(cv).length} country=${data.detected_country} tokens=${usage.input_tokens}/${usage.output_tokens}`)
     res.status(200).json({ ok: true, written: Object.keys(cv).length, usage })
@@ -691,7 +704,7 @@ app.post('/monday/extract', async (req, res) => {
       }
       if (accountId && boardId) {
         const errId = await logExtraction({ accountId, boardId, itemId, status: 'error', error: e.message })
-        void syncReading({ extractionId: errId, accountId, status: 'error', error: e.message })
+        void syncReading({ extractionId: errId, accountId, status: 'error', error: e.message, meta: meta() })
       }
     } catch { /* noop */ }
     res.status(200).json({ ok: false, error: userMsg })
@@ -721,7 +734,12 @@ app.post('/api/webhooks/monday-lifecycle', async (req, res) => {
     verifyWithAnySecret(auth) // 401 implícito: si falla, no ejecutamos nada
     const { type = '', data = {} } = req.body || {}
     const accountId = String(data.account_id ?? '')
-    console.log(`[lifecycle] evento=${type} account=${accountId}`)
+    console.log(`[lifecycle] evento=${type} account=${accountId} nombre="${data.account_name || ''}"`)
+    // Nombre, slug, quién instaló y tamaño de la cuenta: monday los manda en TODOS
+    // los eventos. Se guardan antes de tocar el tablero de ops, así la fila sale
+    // con el nombre. (En uninstall se guardan igual: la fila del tablero queda con
+    // el nombre como histórico aunque después se borre la cuenta de la DB.)
+    if (accountId) await saveLifecycleInfo(accountId, data).catch((e) => console.warn('[lifecycle] no se pudo guardar la info de la cuenta:', e.message))
     if (type === 'install' && accountId) {
       // Alta en el tablero interno de instalaciones (best-effort).
       void syncInstallation(accountId, { estado: 'Activa' })

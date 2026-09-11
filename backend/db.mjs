@@ -158,6 +158,30 @@ export async function saveAccountInfo(accountId, name, slug) {
   )
 }
 
+// Datos del webhook de lifecycle (install/uninstall/subscription). A diferencia de
+// saveAccountInfo, el nombre y el tamaño de la cuenta SÍ se pisan: vienen de monday
+// en el momento, son lo más fresco que hay. El que instaló no: se queda el primero
+// (un evento de suscripción lo manda el que cambió el plan, que puede ser otro).
+export async function saveLifecycleInfo(accountId, d = {}) {
+  if (!accountId) return
+  const s = (v) => (v == null || v === '' ? null : String(v).slice(0, 200))
+  const n = Number(d.account_max_users)
+  await pool.query(
+    `insert into installations (account_id, account_name, account_slug, installer_email, installer_name, monday_tier, monday_max_users, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $7, now())
+     on conflict (account_id) do update set
+       account_name     = coalesce($2, installations.account_name),
+       account_slug     = coalesce($3, installations.account_slug),
+       installer_email  = coalesce(installations.installer_email, $4),
+       installer_name   = coalesce(installations.installer_name, $5),
+       monday_tier      = coalesce($6, installations.monday_tier),
+       monday_max_users = coalesce($7, installations.monday_max_users),
+       updated_at = now()`,
+    [String(accountId), s(d.account_name), s(d.account_slug), s(d.user_email), s(d.user_name),
+      s(d.account_tier), Number.isFinite(n) && n > 0 ? n : null],
+  )
+}
+
 export async function getAccountName(accountId) {
   const { rows } = await pool.query(
     'select account_name, account_slug from installations where account_id = $1', [String(accountId)],
