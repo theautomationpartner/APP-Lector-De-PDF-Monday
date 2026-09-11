@@ -347,7 +347,6 @@ export default function Cargar() {
                 {t(kind === 'remito' ? 'up.btn.remito' : 'up.btn.fiscal')}
               </button>
               <div className="up-formats">{t('up.formats')}</div>
-              <div className="up-how">{t('up.how', { label: plan.label })}</div>
             </>
           )}
           {paso && (
