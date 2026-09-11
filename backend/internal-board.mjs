@@ -182,7 +182,9 @@ export async function refreshClientRow(accountId, clientItem) {
     [C1.erroresMes]: String(r.errores),
     [C1.ultimoError]: ultErr ? `${dstr(ultErr.created_at)} · ${String(ultErr.error || '').slice(0, 180)}` : '',
   }
-  if (r.last) cv[C1.last] = { date: dstr(r.last) }
+  // Sin lecturas se vacía: si se borraron (ej. pruebas internas), no debe quedar
+  // la fecha de una lectura que ya no existe.
+  cv[C1.last] = r.last ? { date: dstr(r.last) } : {}
   // Lo que puede no conocerse (cuentas viejas: monday lo manda solo en el install)
   // se escribe solo si está: nunca borrar algo que ya estaba escrito.
   // Sin nombre, el slug (el "acme" de acme.monday.com) identifica mejor que el ID.
