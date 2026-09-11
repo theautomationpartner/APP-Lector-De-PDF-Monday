@@ -15,11 +15,11 @@ import {
   buildColumnValues, writeColumns, postComment, setStatus, getStatusColumnId, getAccountInfo,
   writeLineItemSubitems, renameItem,
 } from './monday.mjs'
-import { saveAccountInfo, saveLifecycleInfo, runStartupMigrations, getBoardConfig, saveBoardConfig, adoptStatusColumnId, logExtraction, claimInvoiceKey, releaseInvoiceKey, claimSubitems, releaseSubitems, deleteAccountData, getUsage, setAccountPlan, recentReadCounts, saveLanguage, getInstallationLanguage } from './db.mjs'
+import { saveAccountInfo, saveLifecycleInfo, saveTriggerLabel, runStartupMigrations, getBoardConfig, saveBoardConfig, adoptStatusColumnId, logExtraction, claimInvoiceKey, releaseInvoiceKey, claimSubitems, releaseSubitems, deleteAccountData, getUsage, setAccountPlan, recentReadCounts, saveLanguage, getInstallationLanguage } from './db.mjs'
 import { planFromSubscription } from './plans.mjs'
 import { cuitValido } from './countries/ar.mjs'
 import { syncReading, syncInstallation } from './internal-board.mjs'
-import { t, lifecycleLabels } from './i18n.mjs'
+import { t, lifecycleLabels, allLifecycleLabels } from './i18n.mjs'
 import { LINE_FIELDS } from './fields.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -207,6 +207,10 @@ app.get('/api/config/:boardId', async (req, res) => {
       filterTaxIds: Array.isArray(cfg?.filter_tax_ids) ? cfg.filter_tax_ids : [],
       lineItemsMapping: cfg?.line_items_mapping || {},
       docKind: cfg?.doc_kind || 'fiscal',
+      // Para la vista "Cargar comprobante": qué etiqueta dispara la lectura (aprendida
+      // de la receta o elegida por el usuario) y cuáles son las nuestras.
+      triggerLabel: cfg?.trigger_label || '',
+      ourLabels: allLifecycleLabels(),
     })
   } catch (e) {
     sendApiError(res, e)
@@ -217,6 +221,18 @@ app.post('/api/config/:boardId', async (req, res) => {
   try {
     const { accountId } = authSession(req)
     await saveBoardConfig(accountId, req.params.boardId, sanitizeConfigBody(req.body))
+    res.json({ ok: true })
+  } catch (e) {
+    sendApiError(res, e)
+  }
+})
+
+// La vista "Cargar comprobante" guarda la etiqueta que dispara la lectura cuando no
+// la pudo deducir sola y se la preguntó al usuario (una vez por tablero).
+app.post('/api/config/:boardId/trigger-label', async (req, res) => {
+  try {
+    const { accountId } = authSession(req)
+    await saveTriggerLabel(accountId, req.params.boardId, req.body?.label)
     res.json({ ok: true })
   } catch (e) {
     sendApiError(res, e)
@@ -368,6 +384,10 @@ app.post('/monday/extract', async (req, res) => {
       // Tablero con una sola columna de estado: la fijamos para que siga siendo la
       // misma aunque el usuario agregue otra columna de estado más adelante.
       if (st.adopted) await adoptStatusColumnId(accountId, boardId, st.id).catch(() => {})
+      // La etiqueta que tiene puesta el ítem al llegar = la que disparó la receta.
+      // Se aprende para la vista "Cargar comprobante" (se autocorrige si la renombran).
+      // Si es una nuestra (re-disparo manual desde "Error"), no se toma.
+      if (st.id && st.text && !(st.text in allLifecycleLabels())) void saveTriggerLabel(accountId, boardId, st.text).catch(() => {})
       if (st.ambiguous) {
         console.warn(`[status] board=${boardId} tiene varias columnas de estado y ninguna elegida — no se escribe el estado`)
         // Avisamos en el ítem: si no, el usuario ve que la lectura funciona pero el

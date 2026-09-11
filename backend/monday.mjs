@@ -184,18 +184,21 @@ export async function getStatusColumnId(token, itemId, configuredId = '', ourLab
   const d = await gql(token, `query { items(ids: [${Number(itemId)}]) { column_values { id type text } } }`)
   const cols = (d?.items?.[0]?.column_values || []).filter((c) => c.type === 'status' || c.type === 'color')
   if (!cols.length) return { id: null, adopted: false }
+  // text = la etiqueta que tiene puesta el ítem AHORA. Cuando la receta acaba de
+  // dispararse, es la etiqueta que la disparó: el server la aprende (trigger_label).
+  const texto = (id) => String(cols.find((c) => c.id === id)?.text || '').trim()
   // 1) La elegida por el usuario. Si la eligió y ya NO existe (la borró), no caemos a
   //    otra: sería volver a escribir en una columna que no eligió. Mejor no escribir.
   if (configuredId) {
     return cols.some((c) => c.id === configuredId)
-      ? { id: configuredId, adopted: false }
+      ? { id: configuredId, adopted: false, text: texto(configuredId) }
       : { id: null, adopted: false, ambiguous: true }
   }
   // 2) Una sola columna de estado = no hay ambigüedad posible.
-  if (cols.length === 1) return { id: cols[0].id, adopted: true }
+  if (cols.length === 1) return { id: cols[0].id, adopted: true, text: texto(cols[0].id) }
   // 3) Varias, ninguna elegida: si UNA ya tiene puesta una etiqueta NUESTRA, es esa.
   const conNuestroTexto = cols.filter((c) => ourLabels.includes(String(c.text || '').trim()))
-  if (conNuestroTexto.length === 1) return { id: conNuestroTexto[0].id, adopted: true }
+  if (conNuestroTexto.length === 1) return { id: conNuestroTexto[0].id, adopted: true, text: texto(conNuestroTexto[0].id) }
   // 4) Si no, miramos las etiquetas DEFINIDAS en cada columna (no el valor de este
   //    ítem). La columna que tiene "Leyendo Comprobante"/"Comprobante Leído" entre sus
   //    opciones es la nuestra, aunque este ítem esté en otro valor. Sin esto, un
@@ -210,7 +213,7 @@ export async function getStatusColumnId(token, itemId, configuredId = '', ourLab
         const labels = Object.values(JSON.parse(c.settings_str || '{}').labels || {}).map((x) => String(x).trim())
         return ourLabels.some((l) => labels.includes(l))
       })
-      if (nuestras.length === 1) return { id: nuestras[0].id, adopted: true }
+      if (nuestras.length === 1) return { id: nuestras[0].id, adopted: true, text: texto(nuestras[0].id) }
     } catch { /* si falla, seguimos al caso ambiguo */ }
   }
   // 5) Genuinamente ambiguo: no tocamos nada.

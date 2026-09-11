@@ -62,3 +62,11 @@ const lifecycle = {
 export function lifecycleLabels(lang) {
   return lifecycle[lang] || lifecycle.en
 }
+// Todas las etiquetas que pone la app, en los dos idiomas, con su significado. Sirve
+// para saber cuál NO es nuestra (= la que dispara la receta) y para que la vista
+// "Cargar comprobante" traduzca el estado de cada ítem sin repetir esta lista.
+export function allLifecycleLabels() {
+  const out = {}
+  for (const l of Object.values(lifecycle)) for (const [k, v] of Object.entries(l)) out[v] = k
+  return out // { 'Leyendo Comprobante': 'processing', 'Reading invoice': 'processing', ... }
+}

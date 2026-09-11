@@ -546,6 +546,50 @@ textarea.gd-input { resize: vertical; min-height: 88px; font-family: var(--font-
 /* Aviso al cambiar de objetivo cuando eso SACA campos que ya cargaban. */
 .undo-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding: 9px 13px; border: 1px solid var(--warn-100, #F3E3B8); background: var(--warn-50, #FDF7E7); border-radius: var(--r); font: 500 12.5px var(--font-ui); color: var(--ink-700); }
 
+/* ─── Vista "Cargar comprobante" (Cargar.jsx) ───
+   Una sola columna angosta: el operador entra, sube y se va. */
+.up { max-width: 620px; margin: 0 auto; padding: 24px 20px 40px; display: flex; flex-direction: column; gap: 14px; }
+.up-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.up-brand { display: flex; align-items: center; gap: 10px; font: 600 16px var(--font-ui); color: var(--ink-900); }
+.up-brand .sb-logo { width: 30px; height: 30px; font-size: 12px; }
+.up-usage { font: 500 12px var(--font-ui); color: var(--ink-500); background: var(--ink-0); border: 1px solid var(--ink-150); border-radius: 999px; padding: 4px 11px; }
+.up-card { background: var(--ink-0); border: 1px solid var(--ink-150); border-radius: var(--r-lg); padding: 20px 22px; box-shadow: var(--sh-xs); }
+.up-blk { font: 500 14px var(--font-ui); color: var(--warn-500); background: var(--warn-50); border-color: var(--warn-100); line-height: 1.5; }
+.up-blk.err { color: var(--err-500); background: var(--err-50); border-color: var(--err-50); }
+.up-drop { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding: 34px 22px; border: 1.5px dashed var(--accent-100); background: linear-gradient(180deg, var(--accent-bg), var(--ink-0)); }
+.up-btn { display: inline-flex; align-items: center; gap: 10px; height: 50px; padding: 0 28px; border: none; border-radius: var(--r-lg); background: var(--brand-navy); color: #fff; font: 600 16px var(--font-ui); cursor: pointer; box-shadow: var(--sh-md); transition: background .12s, transform .08s; }
+.up-btn:hover { background: var(--brand-navy-600); }
+.up-btn:active { transform: translateY(1px); }
+.up-btn-ic { width: 24px; height: 24px; border-radius: 50%; background: var(--brand-yellow); color: var(--brand-navy); display: grid; place-items: center; font: 800 14px var(--font-ui); }
+.up-formats { font: 500 12.5px var(--font-ui); color: var(--ink-500); }
+.up-how { font: 400 13px var(--font-ui); color: var(--ink-600); max-width: 420px; line-height: 1.5; }
+.up-progress { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.up-progress-txt { font: 500 14px var(--font-ui); color: var(--ink-800); }
+.up-aviso { font: 500 13.5px var(--font-ui); line-height: 1.5; padding: 11px 14px; border-radius: var(--r); border: 1px solid; }
+.up-aviso.ok { color: var(--ok-500); background: var(--ok-50); border-color: var(--ok-100); }
+.up-aviso.err { color: var(--err-500); background: var(--err-50); border-color: #F2C9C4; }
+.up-aviso.info { color: var(--ink-600); background: var(--ink-50); border-color: var(--ink-200); }
+.up-ask-title { font: 600 15px var(--font-ui); color: var(--ink-900); }
+.up-ask-help { font: 400 13px var(--font-ui); color: var(--ink-500); margin: 4px 0 12px; }
+.up-ask-row { display: flex; gap: 10px; }
+.up-ask-row .gd-select { flex: 1; }
+.up-ask-row .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+.up-list { padding: 14px 18px; }
+.up-list-title { font: 600 11px var(--font-ui); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-500); margin-bottom: 6px; }
+.up-row { padding: 9px 0; border-top: 1px solid var(--ink-100); }
+.up-row:first-of-type { border-top: none; }
+.up-row-main { display: flex; align-items: center; gap: 10px; }
+.up-row-name { flex: 1; min-width: 0; font: 500 13.5px var(--font-ui); color: var(--ink-900); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.up-pill { flex: none; font: 600 11.5px var(--font-ui); padding: 3px 10px; border-radius: 999px; background: var(--ink-100); color: var(--ink-600); }
+.up-pill.k-sent, .up-pill.k-processing { background: var(--accent-bg); color: var(--brand-navy); }
+.up-pill.k-done { background: var(--ok-50); color: var(--ok-500); }
+.up-pill.k-warned, .up-pill.k-duplicate, .up-pill.k-ignored { background: var(--warn-50); color: var(--warn-500); }
+.up-pill.k-error { background: var(--err-50); color: var(--err-500); }
+.up-open { flex: none; background: none; border: 1px solid var(--ink-200); border-radius: var(--r-sm); padding: 4px 10px; font: 600 12px var(--font-ui); color: var(--accent); cursor: pointer; }
+.up-open:hover { background: var(--accent-bg); border-color: var(--accent-100); }
+.up-row-warn { margin-top: 6px; font: 400 12.5px var(--font-ui); color: var(--warn-500); line-height: 1.45; }
+@media (max-width: 480px) { .up-ask-row { flex-direction: column; } .up-row-main { flex-wrap: wrap; } }
+
 /* Atajos de paquete dentro de la barra del mapeo. Reemplazan a las 3 tarjetas de
    objetivo: el mapeo es la pantalla, esto es solo para no tildar 34 campos a mano. */
 .quickset { display: inline-flex; align-items: center; gap: 8px; font: 400 12.5px var(--font-ui); color: var(--ink-500); }

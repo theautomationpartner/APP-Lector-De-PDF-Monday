@@ -52,11 +52,25 @@ export async function getBoardConfig(accountId, boardId) {
   const { rows } = await pool.query(
     `select mapping, status_column_id, status_enabled, tax_ids_plain, automation_confirmed, file_column_id, country_override, currency_override, ui_language,
             dedup_enabled, line_items_enabled, line_items_mapping, rename_item_enabled, only_fiscal_docs, filter_mode, filter_tax_ids, countries, currencies,
-            doc_kind
+            doc_kind, trigger_label
        from board_configs where account_id = $1 and board_id = $2`,
     [accountId, boardId],
   )
   return rows[0] || null
+}
+
+// Etiqueta de estado que DISPARA la lectura (la de la receta del cliente: "Leer",
+// "Leer Doc"…). monday no expone la receta, así que se aprende: cada vez que la receta
+// corre, el ítem tiene puesta esa etiqueta. La usa la vista "Cargar comprobante" para
+// saber qué poner. Solo actualiza tableros ya configurados (no crea filas).
+export async function saveTriggerLabel(accountId, boardId, label) {
+  const l = String(label || '').trim().slice(0, 100)
+  if (!l) return
+  await pool.query(
+    `update board_configs set trigger_label = $3
+      where account_id = $1 and board_id = $2 and coalesce(trigger_label, '') <> $3`,
+    [String(accountId), String(boardId), l],
+  )
 }
 
 // El tipo de documento tiene que ser COHERENTE con el mapeo que llega. Si el
