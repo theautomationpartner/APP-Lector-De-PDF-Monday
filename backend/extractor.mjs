@@ -210,7 +210,7 @@ export function buildPrompt(countries = [], lineItems = false, kind = 'fiscal') 
 // Manda el archivo (PDF o imagen, base64) a Claude y devuelve { data, usage, model }.
 // mediaType: 'application/pdf' | 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'.
 // hints = { country, currency } de la config, para desambiguar fecha/número/moneda.
-export async function extractInvoice(fileBase64, mediaType = 'application/pdf', model = 'claude-haiku-4-5', hints = {}) {
+export async function extractInvoice(fileBase64, mediaType = 'application/pdf', model = 'claude-sonnet-5', hints = {}) {
   // qrBase64/qrMediaType = el archivo ORIGINAL. A la IA le mandamos las fotos
   // achicadas (no necesita más), pero el QR sí necesita la resolución original.
   const { countries = [], lineItems = false, qrBase64, qrMediaType, docKind = 'fiscal', filePath } = hints

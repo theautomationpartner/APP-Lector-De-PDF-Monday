@@ -19,7 +19,10 @@ export const config = {
   port: Number(process.env.PORT) || 8080,
   appEnv: process.env.APP_ENV || 'production', // 'staging' gatea alertas externas
   appBaseUrl: process.env.APP_BASE_URL || '',
-  model: process.env.MODEL || 'claude-haiku-4-5',
+  // Sonnet desde el 11/09/2026: en el banco de 19 comprobantes leyó 99,3% contra 92,8%
+  // de Haiku, y los errores de Haiku eran de vista (dígitos térmicos), no de prompt.
+  // Cuesta ~2,4x. Volver a Haiku = MODEL=claude-haiku-4-5 en el .env, sin tocar código.
+  model: process.env.MODEL || 'claude-sonnet-5',
   // Plan por defecto para cuentas sin plan explícito en la DB. Durante la beta se
   // puede poner 'enterprise' para no limitar a nadie; en producción → 'free'.
   defaultPlan: process.env.DEFAULT_PLAN || 'free',

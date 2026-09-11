@@ -32,7 +32,7 @@ const C2 = {
 // $/1M tokens (in/out) — mismo catálogo que scripts/usage-report.mjs.
 const PRICES = {
   'claude-haiku-4-5': { in: 1, out: 5 },
-  'claude-sonnet-5':  { in: 3, out: 15 },
+  'claude-sonnet-5':  { in: 2, out: 10 },
   'claude-opus-4-8':  { in: 5, out: 25 },
 }
 const ESTADO = { ok: 'OK', error: 'Error', duplicate: 'Duplicada' }
