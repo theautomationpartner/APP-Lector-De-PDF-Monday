@@ -511,7 +511,10 @@ app.post('/monday/extract', async (req, res) => {
     if (cfg?.only_fiscal_docs && !esperado) {
       if (statusColId) await setStatus(shortLivedToken, boardId, itemId, statusColId, labels.ignored)
       await postComment(shortLivedToken, itemId, t(lang, 'notFiscalDoc', { type: data.document_type || '?' }))
-      await logExtraction({ accountId, boardId, itemId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ignored' })
+      const ignId = await logExtraction({ accountId, boardId, itemId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ignored' })
+      // Al tablero de ops también: la IA ya corrió, el gasto es real. El motivo va
+      // genérico (sin el tipo ni el CUIT): ese tablero es metadata, no contenido.
+      void syncReading({ extractionId: ignId, accountId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ignored', error: 'No es del tipo de documento que carga este tablero' })
       console.log(`[extract] IGNORADA (no fiscal) item=${itemId} class=${data.document_class} type="${data.document_type}"`)
       return res.status(200).json({ ok: true, ignored: true })
     }
@@ -550,7 +553,8 @@ app.post('/monday/extract', async (req, res) => {
       } else if (!allowIds.includes(sid)) {
         if (statusColId) await setStatus(shortLivedToken, boardId, itemId, statusColId, labels.ignored)
         await postComment(shortLivedToken, itemId, t(lang, 'ignored', { taxid: subject || '' }))
-        await logExtraction({ accountId, boardId, itemId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ignored' })
+        const ignId = await logExtraction({ accountId, boardId, itemId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ignored' })
+        void syncReading({ extractionId: ignId, accountId, detectedCountry: data.detected_country, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, status: 'ignored', error: 'El ID fiscal no está en la lista permitida del tablero' })
         console.log(`[extract] IGNORADA (${filterMode} "${subject}" fuera de la lista) item=${itemId}`)
         return res.status(200).json({ ok: true, ignored: true })
       }

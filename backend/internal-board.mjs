@@ -35,7 +35,9 @@ const PRICES = {
   'claude-sonnet-5':  { in: 2, out: 10 },
   'claude-opus-4-8':  { in: 5, out: 25 },
 }
-const ESTADO = { ok: 'OK', error: 'Error', duplicate: 'Duplicada' }
+// 'ignored' también va: la IA ya corrió (tokens gastados) antes de que el filtro
+// del tablero la descartara. Sin esta fila el costo quedaba invisible.
+const ESTADO = { ok: 'OK', error: 'Error', duplicate: 'Duplicada', ignored: 'Ignorada' }
 const dstr = (d) => new Date(d || Date.now()).toISOString().slice(0, 10)
 
 async function gqlOps(q, variables = {}) {
@@ -60,6 +62,25 @@ async function ensureClientItem(accountId) {
   )
   const inst = rows[0]
   if (inst?.board_item_id) return inst.board_item_id
+
+  // Sin mapeo no quiere decir sin fila: al desinstalar se borra la cuenta de la DB
+  // (y con ella el mapeo) pero la fila del tablero queda como histórico. Si el
+  // cliente reinstala, se reusa esa fila en vez de crearle una segunda. Si hay
+  // varias (duplicados viejos), la más nueva.
+  const found = await gqlOps(
+    `query($b:ID!,$c:String!,$v:String!){ items_page_by_column_values(board_id:$b, limit:10, columns:[{ column_id:$c, column_values:[$v] }]){ items { id } } }`,
+    { b: B1, c: C1.account, v: String(accountId) },
+  )
+  const previa = (found.items_page_by_column_values?.items || []).map((i) => i.id).sort((a, b) => Number(b) - Number(a))[0]
+  if (previa) {
+    await query(
+      `insert into installations (account_id, board_item_id, updated_at) values ($1, $2, now())
+       on conflict (account_id) do update set board_item_id = $2, updated_at = now()`,
+      [String(accountId), previa],
+    )
+    return previa
+  }
+
   const cv = {
     [C1.account]: String(accountId),
     [C1.plan]: { label: planLabel(inst?.plan || config.defaultPlan) },
@@ -69,8 +90,8 @@ async function ensureClientItem(accountId) {
   }
   const d = await gqlOps(
     `mutation($b:ID!,$n:String!,$cv:JSON!){ create_item(board_id:$b,item_name:$n,column_values:$cv,create_labels_if_missing:true){ id } }`,
-    // Nombre real de la cuenta si ya lo capturamos; si no, el ID (se renombra solo
-    // la próxima vez que se cree, y para las existentes hay un backfill).
+    // Nombre real de la cuenta si ya lo capturamos; si no, el ID (refreshClientRow
+    // lo renombra en la primera lectura, cuando ya se conoce).
     { b: B1, n: inst?.account_name || `Cuenta ${accountId}`, cv: JSON.stringify(cv) },
   )
   const itemId = d.create_item.id
@@ -82,26 +103,41 @@ async function ensureClientItem(accountId) {
   return itemId
 }
 
-// Refresca los contadores del cliente en Board 1 (facturas mes/total + última).
-async function refreshClientCounters(accountId, clientItem) {
+// Refresca la fila del cliente en Board 1: contadores (facturas mes/total + última)
+// y también nombre, plan y país. Esos tres antes se escribían SOLO al crear la fila,
+// que casi siempre es en el install, cuando todavía no se conocen (el nombre llega
+// con la primera lectura, el país con la primera config, y el plan puede cambiarse
+// a mano en la DB). Resultado: filas que decían "Cuenta 30446835 · Free · sin país"
+// para un cliente Pro de Argentina. Exportada para el backfill.
+export async function refreshClientRow(accountId, clientItem) {
   const { rows } = await query(
-    `select count(*) filter (where status = 'ok') as total,
-            count(*) filter (where status = 'ok' and created_at >= date_trunc('month', now())) as month,
-            max(created_at) filter (where status = 'ok') as last
-       from extractions where account_id = $1`,
+    `select count(*) filter (where e.status = 'ok') as total,
+            count(*) filter (where e.status = 'ok' and e.created_at >= date_trunc('month', now())) as month,
+            max(e.created_at) filter (where e.status = 'ok') as last,
+            i.account_name, i.plan, i.default_country
+       from installations i left join extractions e on e.account_id = i.account_id
+      where i.account_id = $1
+      group by i.account_name, i.plan, i.default_country`,
     [String(accountId)],
   )
   const r = rows[0] || {}
-  const cv = { [C1.month]: String(r.month || 0), [C1.total]: String(r.total || 0) }
+  const cv = {
+    [C1.month]: String(r.month || 0),
+    [C1.total]: String(r.total || 0),
+    [C1.plan]: { label: planLabel(r.plan || config.defaultPlan) },
+  }
   if (r.last) cv[C1.last] = { date: dstr(r.last) }
+  // Nombre y país solo si se conocen: nunca borrar algo que ya estaba escrito.
+  if (r.account_name) cv.name = r.account_name
+  if (r.default_country) cv[C1.country] = r.default_country
   await gqlOps(
-    `mutation($b:ID!,$i:ID!,$cv:JSON!){ change_multiple_column_values(board_id:$b,item_id:$i,column_values:$cv){ id } }`,
+    `mutation($b:ID!,$i:ID!,$cv:JSON!){ change_multiple_column_values(board_id:$b,item_id:$i,column_values:$cv,create_labels_if_missing:true){ id } }`,
     { b: B1, i: String(clientItem), cv: JSON.stringify(cv) },
   )
 }
 
 // Registra UNA lectura en Board 2 (nombre "PAÍS · fecha", costo calculado, motivo
-// si falló, link al cliente) + refresca los contadores de Board 1.
+// si falló, link al cliente) + refresca la fila del cliente en Board 1.
 export async function syncReading({ extractionId, accountId, detectedCountry, model, inputTokens, outputTokens, status, error }) {
   if (!TOKEN || !accountId) return
   try {
@@ -127,7 +163,7 @@ export async function syncReading({ extractionId, accountId, detectedCountry, mo
     if (extractionId) {
       await query('update extractions set board_item_id = $1 where id = $2', [d.create_item.id, extractionId])
     }
-    if (clientItem) await refreshClientCounters(accountId, clientItem)
+    if (clientItem) await refreshClientRow(accountId, clientItem)
   } catch (e) {
     console.warn('[opsboard] no se pudo registrar la lectura:', e.message)
   }
